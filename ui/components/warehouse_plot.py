@@ -119,6 +119,57 @@ def plot_warehouse_layout(
     return fig
 
 
+def _route_to_corridor_path(route, warehouse):
+    """
+    Rota noktalarını gerçek koridor yolu boyunca (x, y) listesine çevir.
+
+    İşçi raflardan geçemez — koridor içinde X yönünde, cross-aisle'da Y yönünde hareket eder.
+    Bu fonksiyon iki ardışık konum arasında gerekli ara noktaları ekler.
+    """
+    if not route:
+        return [], []
+
+    raw_xs, raw_ys = [], []
+    prev_x, prev_y = warehouse.coords(route[0])
+    raw_xs.append(prev_x)
+    raw_ys.append(prev_y)
+
+    for loc in route[1:]:
+        cur_x, cur_y = warehouse.coords(loc)
+
+        # Aynı koridor mu? (Y koordinatları yakın)
+        if abs(cur_y - prev_y) < 1.0:
+            # Aynı koridor - doğrudan X yönünde
+            raw_xs.append(cur_x)
+            raw_ys.append(cur_y)
+        else:
+            # Farklı koridor - cross-aisle'dan geçmeli
+            # En kısa cross-aisle'ı bul (Manhattan mesafesi)
+            best_cross = min(
+                warehouse.cross_aisle_x,
+                key=lambda cx: abs(prev_x - cx) + abs(cur_x - cx)
+            )
+            # 1) Mevcut koridordan cross-aisle'a çık (X yönü)
+            raw_xs.append(best_cross)
+            raw_ys.append(prev_y)
+            # 2) Cross-aisle'da hedef koridorun Y'sine git (Y yönü)
+            raw_xs.append(best_cross)
+            raw_ys.append(cur_y)
+            # 3) Hedef koridorda hedefe git (X yönü)
+            raw_xs.append(cur_x)
+            raw_ys.append(cur_y)
+
+        prev_x, prev_y = cur_x, cur_y
+
+    # Ardışık tekrar eden noktaları temizle (görsel pürüzü önler)
+    xs, ys = [raw_xs[0]], [raw_ys[0]]
+    for i in range(1, len(raw_xs)):
+        if abs(raw_xs[i] - xs[-1]) > 0.01 or abs(raw_ys[i] - ys[-1]) > 0.01:
+            xs.append(raw_xs[i])
+            ys.append(raw_ys[i])
+    return xs, ys
+
+
 def plot_batch_routes(
     warehouse: Warehouse,
     batches: list,
@@ -146,17 +197,13 @@ def plot_batch_routes(
         showlegend=False,
     ))
 
-    # Her batch için rota
+    # Her batch için rota — gerçek koridor yolu boyunca çiz (raf üstünden değil)
     for i, batch in enumerate(batches[:max_batches_to_show]):
         color = BATCH_COLORS[i % len(BATCH_COLORS)]
         route = batch.route
         if not route:
             continue
-        xs, ys = [], []
-        for loc in route:
-            x, y = warehouse.coords(loc)
-            xs.append(x)
-            ys.append(y)
+        xs, ys = _route_to_corridor_path(route, warehouse)
 
         fig.add_trace(go.Scatter(
             x=xs, y=ys,
