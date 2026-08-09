@@ -236,27 +236,35 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         remaining = len(orders)
 
         while remaining > 0:
-            best_score = -1.0
+            best_score = -1e18
             best_i     = -1
-            best_bidx  = -1   # -1 = yeni batch
+            best_bidx  = -1
 
             for i, o in enumerate(orders):
                 if assigned[i]:
                     continue
 
                 costs = self._insertion_costs(o, batches)
-                # costs: [(delta, batch_idx), ...] sıralı, -1 = yeni batch
+                # costs: [(delta, batch_idx), ...] sıralı (ucuz önce), -1 = yeni batch
 
-                if len(costs) >= 2:
-                    regret = costs[1][0] - costs[0][0]
-                    target = costs[0][1]
-                elif len(costs) == 1:
-                    regret = costs[0][0]
-                    target = costs[0][1]
+                # En iyi hedef = en ucuz seçenek
+                target = costs[0][1]
+
+                # Regret = "en iyi mevcut batch'e koymak" ile "yeni batch açmak"
+                # arasındaki fark. Yeni batch açmak zorunda kalırsak ne kaybederiz?
+                # Bu, kapasiteyi dolduran atamaları önceliklendirir.
+                existing = [c for c in costs if c[1] != -1]
+                new_cost = next((c[0] for c in costs if c[1] == -1), 0.0)
+
+                if existing:
+                    best_existing = existing[0][0]
+                    # Yeni batch açmanın ekstra maliyeti = kaçırma pişmanlığı
+                    regret = new_cost - best_existing
                 else:
+                    # Hiç mevcut batch yok (ilk atama) → düşük öncelik
                     regret = 0.0
-                    target = -1
 
+                # Priority ile ağırlıklandır: zor + yüksek-regret önce
                 score = regret * (1.0 + priorities[i])
                 if score > best_score:
                     best_score = score
@@ -272,6 +280,7 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 b = batches[best_bidx]
                 b.orders.append(o)
                 b.total_weight += o.total_weight
+                b.travel_distance = 0.0  # yeniden hesaplanmalı
 
             assigned[best_i] = True
             remaining -= 1
