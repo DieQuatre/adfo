@@ -1,22 +1,32 @@
 name: Run 35 Scenarios
 
-# Bu workflow şu durumlarda tetiklenir:
-# 1. algorithms/ klasöründe değişiklik olunca (otomatik)
-# 2. Actions sekmesinden elle başlatınca (manuel)
+# SADECE elle tetiklenir (Actions sekmesi → Run workflow).
+#
+# Önceden `push` ile otomatik tetikleniyor ve sonuçları repoya geri
+# commit'liyordu. Bu tehlikeliydi: algorithms/ veya run_batch.py'a dokunan
+# HER push, elde koşulmuş ölçümleri varsayılan ayarlarla (5 instance,
+# 100 iterasyon) üretilmiş zayıf sonuçlarla sessizce eziyordu. Yayına
+# gidecek ölçümler kaza eseri değil, bilinçli olarak üretilmeli.
 on:
-  push:
-    paths:
-      - 'algorithms/**'
-      - 'core/**'
-      - 'config.py'
-      - 'run_batch.py'
-      - '.github/workflows/run-scenarios.yml'
-  workflow_dispatch:    # GitHub Actions sekmesinden elle çalıştırma butonu
+  workflow_dispatch:
+    inputs:
+      instances:
+        description: 'Senaryo başına instance sayısı'
+        required: false
+        default: '5'
+      depso_iter:
+        description: 'DEPSO iterasyon sayısı (paper: 500)'
+        required: false
+        default: '500'
+
+# En az ayrıcalık: iş yalnızca repoya yazabilsin.
+permissions:
+  contents: write
 
 jobs:
   run-scenarios:
     runs-on: ubuntu-latest
-    timeout-minutes: 90      # En kötü ihtimal 90 dakika
+    timeout-minutes: 360     # 500 iterasyon + 200 siparişlik senaryolar yavaş
     
     steps:
       - name: Checkout repo
@@ -38,20 +48,27 @@ jobs:
           mkdir -p results
           for i in 1 2 3 4 5 6 7; do
             echo "════════ Batch $i / 7 başlıyor ════════"
-            python run_batch.py --batch $i
+            python -u run_batch.py --batch $i \
+              --n "${{ inputs.instances }}" \
+              --depso-iter "${{ inputs.depso_iter }}"
             echo "════════ Batch $i bitti ════════"
           done
-      
+
+      # Bağımsızlık kontrolünü de burada yap: iki senaryo birebir aynı
+      # sonucu verirse rapor bunu yazar ve gözden kaçmaz.
+      - name: Rapor üret
+        run: python regen_35.py
+
       - name: List results
         run: |
           echo "=== Üretilen dosyalar ==="
           ls -la results/
-      
+
       - name: Commit and push results
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git add results/batch_*.json
+          git add results/batch_*.json results/paper_35_scenarios.md results/paper_35_scenarios.json
           if git diff --staged --quiet; then
             echo "Sonuçlarda değişiklik yok, commit atlanıyor."
           else
