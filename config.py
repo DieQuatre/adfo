@@ -120,12 +120,12 @@ RBRS_AE = {
     'elimination_pct': 0.20,
 
     # Local search (yüksek değerler — DEPSO'yu geçmek için)
-    'shift_attempts': 150,
-    'swap_attempts': 150,
+    'shift_attempts': 40,
+    'swap_attempts': 40,
 
     # Stopping criteria
-    'max_iterations': 100,
-    'max_no_improvement': 20,
+    'max_iterations': 60,
+    'max_no_improvement': 12,
 }
 
 

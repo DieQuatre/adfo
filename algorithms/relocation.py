@@ -184,7 +184,6 @@ class DynamicRelocation:
 
         # 4) Relocation önerileri test et
         tested = 0
-        retried: set[int] = set()   # item_id's that have already been re-queued once
         while priority_list and tested < self.max_suggestions:
             # En yüksek öncelikli ascending item seç
             asc_item = priority_list.pop(0)
@@ -202,19 +201,11 @@ class DynamicRelocation:
             # Taşıma sonrası TD hesapla
             self._apply_suggestion(suggestion)
             td_after = self._compute_td(orders, algorithm)
-            tdr = td_comparison - td_after   # anlık azalma
-
-            if tdr <= 0:
-                # Azalma yok → geri al; allow at most one retry per item per period
-                self._undo_suggestion(suggestion)
-                if asc_item.item_id not in retried:
-                    priority_list.append(asc_item)
-                    retried.add(asc_item.item_id)
-                tested += 1
-                result.num_rejected += 1
-                continue
+            tdr = td_comparison - td_after   # anlık azalma (negatif olabilir)
 
             # Gelecek kazancı tahmin et (paper Section 5.3.5)
+            # Paper mantığı: karar future_gain + tdr > effort.
+            # Anlık tdr sıfır/negatif olsa bile gelecek kazanç effort'u geçebilir.
             future_gain = self._estimate_future_gain(suggestion, forecasts)
 
             if future_gain + tdr > effort:
@@ -223,7 +214,7 @@ class DynamicRelocation:
                 result.num_accepted += 1
                 result.total_relocation_effort_LU += effort
             else:
-                # Reddet → geri al
+                # Reddet → geri al (empty_locs dahil tam restore)
                 self._undo_suggestion(suggestion)
                 result.num_rejected += 1
 
@@ -277,7 +268,7 @@ class DynamicRelocation:
         candidates = []
         for state in self.item_states.values():
             if (state.periods_in_wrong_class >= self.o and
-                    state.periods_in_target_class >= self.u):
+                    state.periods_in_target_class >= 0):
                 # Ascending (C→B, C→A, B→A) veya descending
                 gap = (class_order[state.current_class] -
                        class_order[state.forecast_class])
