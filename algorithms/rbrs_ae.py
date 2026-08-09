@@ -234,6 +234,8 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 b = batches[best_bidx]
                 b.orders.append(o)
                 b.total_weight += o.total_weight
+                # Batch içeriği değişti → rotası artık geçersiz.
+                b.travel_distance = _ROUTE_STALE
 
             assigned[best_i] = True
             remaining -= 1
@@ -242,14 +244,22 @@ class RBRS_AE(BatchingRoutingAlgorithm):
 
     def _insertion_costs(self, order: Order,
                          batches: list[Batch]) -> list[tuple[float, int]]:
-        """Mevcut batch'lere + yeni batch'e insertion maliyetleri (sıralı)."""
+        """
+        Mevcut batch'lere + yeni batch'e MARJİNAL insertion maliyetleri (sıralı).
+
+        Maliyet = rota(batch + order) - rota(batch). İkinci terim batch'in
+        güncel rota maliyeti olmalı. `<= 0.0` kontrolü hem stale işaretini
+        (_ROUTE_STALE) hem de hiç hesaplanmamış (0.0) batch'leri yakalar;
+        önceden sadece `< 0.0` bakıldığı için taban 0 kalıyor ve maliyet
+        marjinal delta yerine birleşik rotanın TAMAMI olarak hesaplanıyordu.
+        """
         costs = []
         new_locs = order.locations
 
         for idx, b in enumerate(batches):
             if b.total_weight + order.total_weight > self.capacity:
                 continue
-            if b.travel_distance < 0.0 and b.orders:
+            if b.orders and b.travel_distance <= 0.0:
                 _, b.travel_distance = self._route_cost(b.locations)
             _, c = self._route_cost(b.locations + new_locs)
             costs.append((c - b.travel_distance, idx))

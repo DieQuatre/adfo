@@ -255,17 +255,34 @@ class DynamicRelocation:
         return classes
 
     def _update_class_tracking(self, forecast_classes: dict[int, str]) -> None:
-        """Her item için yanlış sınıfta geçirilen periyot sayısını güncelle."""
+        """
+        İki BAĞIMSIZ sayacı güncelle (paper Section 5.3 eşikleri o ve u):
+
+        - periods_in_wrong_class (o): item kaç ardışık periyottur yanlış
+          sınıfta duruyor, yani current_class != forecast_class.
+        - periods_in_target_class (u): tahmin edilen HEDEF sınıf kaç ardışık
+          periyottur değişmeden aynı kaldı, yani tahmin ne kadar istikrarlı.
+
+        Bu ikisi farklı şeyi ölçer ve aynı anda pozitif olabilir. (Önceden
+        her biri diğerini sıfırlıyordu; bu yüzden `o AND u` koşulu asla
+        sağlanamıyor ve hiçbir relocation önerisi üretilemiyordu.)
+        """
         for item_id, state in self.item_states.items():
             fc = forecast_classes.get(item_id, state.current_class)
+            prev_fc = state.forecast_class
             state.forecast_class = fc
 
+            # o sayacı: yanlış sınıfta geçen ardışık periyot
             if fc != state.current_class:
                 state.periods_in_wrong_class += 1
-                state.periods_in_target_class = 0
             else:
                 state.periods_in_wrong_class = 0
+
+            # u sayacı: hedef sınıf tahmininin ardışık istikrar süresi
+            if fc == prev_fc:
                 state.periods_in_target_class += 1
+            else:
+                state.periods_in_target_class = 1
 
     def _build_priority_list(self) -> list[ItemState]:
         """
