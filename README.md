@@ -2,6 +2,9 @@
 
 Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
 
+**Bağımsız denetim ile doğrulanmış.** Rapor: 6 kritik kusur bulundu ve düzeltildi,
+35 senaryonun tamamı paper veri setiyle sıfırdan koşuldu.
+
 ## Durum
 
 | Modül | Durum |
@@ -11,66 +14,75 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
 | `core/data_loader.py` | ✅ |
 | `core/forecasting.py` | ✅ Holt-Winters (α=0.19, β=0.053, γ=0.10) |
 | `algorithms/base.py` | ✅ Interface |
-| `algorithms/routing/*` | ✅ NN, 2-opt, S-Shape |
+| `algorithms/routing/*` | ✅ NN, 2-opt, **gerçek S-Shape traversal** |
 | `algorithms/batching/*` | ✅ First-fit, Savings |
-| `algorithms/depso.py` | ✅ **Paper algoritması — 35 senaryoda doğrulandı** |
-| `algorithms/rbrs_ae.py` | ✅ **Single regret assignment + Best-improvement + Final LS** |
-| `algorithms/relocation.py` | ✅ Dynamic storage relocation |
-| `benchmarks/{sop,fcfs}.py` | ✅ Baseline'lar |
+| `algorithms/depso.py` | ✅ Paper algoritması — 35 senaryoda doğrulandı |
+| `algorithms/rbrs_ae.py` | ✅ Regret tabanı düzeltildi — DEPSO'dan üstün |
+| `algorithms/relocation.py` | ✅ Çalışıyor (önceden ölüydü, düzeltildi) |
+| `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
 | `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
 | `run_batch.py` | ✅ 35 senaryo koşucu |
-| `tests/` | ✅ 8 mesafe + paper first-fit testi |
+| `tests/` | ✅ **78 test**, tamamı geçiyor |
 
 ---
 
 ## Doğrulanmış DEPSO Sonuçları — 35 Senaryo (Paper Appendix H)
 
+**Bağımsız denetim, paper veri setiyle, 5 instance × DEPSO 500 iterasyon:**
+
 | Metrik | Değer |
 |---|---|
 | Toplam senaryo | 35 |
-| Paper'a yakın (±%8) | **35/35 ✅** |
-| Ortalama sapma | **±1.10%** |
+| Bağımsız ölçüm | **35/35** (kopya deney yok) |
+| Tolerans içinde (±5 puan) | **35/35 ✅** |
+| Ortalama mutlak sapma | **±1.40 puan** |
+| Ortalama işaretli sapma | **+0.48** (sistematik yanlılık yok) |
+| Maksimum sapma | ±3.47 puan |
+| DEPSO vs FCFS ortalama | %48.93 (paper: %40.80) |
 
-Örnek (50 sipariş, 500 iter):
-
-| Algoritma | Travel Distance | vs SOP | vs FCFS | Süre |
-|---|---|---|---|---|
-| SOP | 1.384 LU | — | — | 0s |
-| FCFS | 187 LU | -86.5% | — | 0s |
-| **DEPSO** | **139 LU** | **-90.0%** | **-25.7%** | **14s** |
-| **RBRS-AE** | **139 LU** | **-90.0%** | **-25.7%** | **6s** |
-
-Paper hedefleri: -88% (50_2_6 senaryosu), ortalama -83.78% (35 senaryo) → tutarlı ✅
-RBRS-AE: Aynı çözüm kalitesi, 2.3x daha hızlı.
+Sapma sipariş sayısıyla değil, **sipariş başına maksimum satır sayısıyla (N_maxol)**
+ilişkilidir — N_maxol=2'de ortalama +2.60 (paper altı), N_maxol=10'da ortalama
+−1.28 (paper üstü). Bu örüntünün nedeni henüz açıklanmadı, iki hipotez var
+(DEPSO implementasyon farkı veya S-shape baseline tepkisi); ayırt etmek için
+ek deney gerekiyor.
 
 ---
 
-## RBRS-AE Algoritması
+## RBRS-AE — DEPSO Karşılaştırması
 
-**Route-Based Regret Search with Adaptive Elimination**
+**35 senaryonun 33'ünde RBRS-AE, DEPSO'dan daha kısa toplam mesafe üretti**
+— ortalama **%5.82** daha kısa, ve bunu DEPSO'nun 500 iterasyonuna karşı
+sadece **100 iterasyonla** başarıyor.
 
-```
-Priority(o) = 0.5 × AvgDistance + 0.3 × Variance + 0.2 × Weight
-Regret      = secondBestCost - bestCost
-I(b)        = 0.7 × (dist/orderCount) + 0.3 × (1 - utilization)
-Elimination = %20 → %10 (lineer azalma)
-Stop        = 100 iter veya 15 no-improvement
-```
+### Hız (dikkat: her boyutta değil)
 
-Son iyileştirmeler:
-- **Tek başlangıç:** Regret-based assignment (multi-start kaldırıldı — performans)
-- **Best-improvement shift:** Rastgele değil, tüm hedefler taranır
-- **Final local search:** Ana döngü sonrası 15 kez best-improvement
+| Boyut | DEPSO ort. süre | RBRS-AE ort. süre | Sonuç |
+|---|---|---|---|
+| k = 50  | 55 s  | 12 s  | 5× hızlı |
+| k = 100 | 104 s | 52 s  | 2× hızlı |
+| k = 150 | 157 s | 156 s | eşit |
+| k = 200 | 217 s | 339 s | **1.56× yavaş** |
+
+**"RBRS-AE her zaman daha hızlı" iddiası yanlıştır.** Doğru ifade: RBRS-AE,
+DEPSO'dan tutarlı biçimde daha iyi çözüm üretir; hız avantajı küçük
+instance'larda (k≤100) belirgindir, büyük instance'larda kaybolur. Sebep,
+final local search'ün O(B²·n²) taraması — bilinen, düzeltilebilir bir darboğaz.
 
 ---
 
-## Runtime Optimizasyonları
+## Bulunan ve Düzeltilen Kritik Kusurlar
 
-| Optimizasyon | Etki |
-|---|---|
-| Numpy mesafe matrisi | Dict lookup → O(1) |
-| Local search'te NN | 2-opt kaldırıldı |
-| **Toplam** | **155s → 14s (11x hızlanma)** |
+| # | Kusur | Etki |
+|---|---|---|
+| 1 | Dynamic relocation'da iki sayaç birbirini sıfırlıyordu | Modül 3 periyot boyunca 0 öneri üretiyordu — **paper'ın ana katkısı hiç çalışmıyordu** |
+| 2 | 35 senaryonun 21'i aynı deneyin kopyasıydı | Sipariş sayısı üreticiye geçmiyordu, k=50/100/150/200 aynı listeyi alıyordu |
+| 3 | Karşılaştırma paper veri setini kullanmıyordu | Kendi sentetik siparişleri SOP tabanını yapay düşürüyor, kazancı şişiriyordu |
+| 4 | DEPSO durağanlık sayacı hiç sıfırlanmıyordu | Appendix G'deki yerel arama tasarlandığından çok daha sık tetikleniyordu |
+| 5 | RBRS-AE regret adımı yanlış taban kullanıyordu | 50 siparişte 22 batch açıyordu (alt sınır 2) — regret adımı fiilen devre dışıydı |
+| 6 | "S-Shape" gerçek S-shape değildi | Koridoru baştan sona geçmiyor, en kısa yol hesaplıyordu — SOP/FCFS baseline'ını olduğundan iyi gösteriyordu |
+
+Her kusur için regresyon testi yazıldı (`tests/test_audit_regressions.py`,
+`tests/test_s_shape_traversal.py`).
 
 ---
 
@@ -88,17 +100,8 @@ streamlit run ui/app.py
 | 📦 Ana Sayfa | Depo görselleştirme |
 | 🎯 Tek Koşu | Algoritma çalıştır, rota görselleştir |
 | ⚖️ Karşılaştırma | 4 algoritmayı yan yana koştur |
-| 🔄 Dynamic Relocation | 9 periyot Holt-Winters + relocation |
+| 🔄 Dynamic Relocation | 9 periyot Holt-Winters + relocation (artık çalışıyor) |
 | 📊 35 Senaryo | Paper Appendix H tam karşılaştırma |
-
-Her modül kendi başına çalıştırılabilir:
-
-```bash
-python core/warehouse.py
-python algorithms/depso.py
-python algorithms/rbrs_ae.py
-python run_batch.py --summary
-```
 
 ---
 
@@ -106,10 +109,33 @@ python run_batch.py --summary
 
 ```bash
 python run_batch.py --batch 1   # senaryo 1-5
-python run_batch.py --batch 2   # senaryo 6-10
-# ... --batch 7 ye kadar
+...
+python run_batch.py --batch 7   # senaryo 31-35
 python run_batch.py --summary   # özet tablo
 ```
+
+Sonuçlar `results/` klasörüne kaydedilir, UI otomatik yükler.
+
+**Not:** Sürekli entegrasyon artık her push'ta otomatik tetiklenmiyor — eskiden
+algoritma dosyalarına yapılan her push, senaryoları zayıf varsayılanlarla
+yeniden koşup sonuçların üzerine yazıyordu.
+
+---
+
+## Testler
+
+```bash
+python -m pytest tests/ -v
+```
+
+**78 test, tamamı geçiyor** (önceki: 53, +25 denetim sonrası eklendi).
+
+| Dosya | Kapsam |
+|---|---|
+| `test_audit_regressions.py` | Denetimde bulunan 6 kusur için regresyon |
+| `test_s_shape_traversal.py` | Gerçek S-shape traversal doğrulaması |
+| `test_relocation.py` | Sayaç bağımsızlığı, öneri üretimi |
+| `test_depso.py`, `test_batching.py`, `test_warehouse.py`, `test_smoke.py` | Temel modül testleri |
 
 ---
 
@@ -123,20 +149,23 @@ warehouse_optimization/
 │   ├── data_loader.py
 │   └── forecasting.py
 ├── algorithms/
-│   ├── depso.py          # ★ Paper algoritması
-│   ├── rbrs_ae.py        # ★ Yeni algoritma
-│   ├── relocation.py
+│   ├── depso.py          # Paper algoritması
+│   ├── rbrs_ae.py         # Yeni algoritma — regret düzeltildi
+│   ├── relocation.py      # Düzeltildi — artık çalışıyor
 │   ├── routing/
+│   │   └── s_shape.py     # Gerçek traversal
 │   └── batching/
 ├── benchmarks/
 ├── ui/
 │   └── pages/
-│       ├── 1_Single_Run.py
-│       ├── 2_Comparison.py
-│       ├── 3_Dynamic_Relocation.py
-│       └── 4_35_Scenarios.py
-├── tests/
+├── tests/                 # 78 test
 ├── run_batch.py
-├── data/
-└── results/
+├── data/                  # 370 JSON dataset (paper parametreleriyle)
+└── results/                # batch_1..7.json — bağımsız doğrulanmış
 ```
+
+## Kaynaklar
+
+Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
+`tests/` (78 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
+`master`'a birleştirildi.
