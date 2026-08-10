@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sanal ortamlar
+.venv/
+venv/
+env/
+
+# İşletim sistemi
+.DS_Store
+
+# Editör
+.idea/
+.vscode/

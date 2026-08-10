@@ -113,6 +113,7 @@ class DEPSO(BatchingRoutingAlgorithm):
         self.gbest_distance: float = float('inf')
         self.gbest_batches: list[Batch] = []
         self.s_stag_gbest: int = 0
+        self._prev_gbest: float = float('inf')   # stagnation karşılaştırma referansı
 
         # Convergence izleme
         self.convergence_history: list[float] = []
@@ -159,11 +160,9 @@ class DEPSO(BatchingRoutingAlgorithm):
                 self._move_particle(p_idx)
                 self._evaluate_particle(p_idx)
 
-            # Track convergence before stagnation check so the counter compares
-            # post-move gbest against the previous post-move gbest (not post-LS)
             self.convergence_history.append(self.gbest_distance)
 
-            # Adım 11: Gbest stagnation
+            # Adım 11: Gbest stagnation (referans: önceki iterasyonun sonu)
             self._update_stagnation()
 
             # Adım 12: Mutation
@@ -171,6 +170,10 @@ class DEPSO(BatchingRoutingAlgorithm):
 
             # Adım 13: Local search
             self._local_search()
+
+            # Local search Gbest'i değiştirmiş olabilir; referansı iterasyon
+            # sonunda al ki bir sonraki tur doğru şeyle karşılaştırsın.
+            self._prev_gbest = self.gbest_distance
 
             if self.verbose and it % 50 == 0:
                 print(f"  [DEPSO] iter {it:4d}/{self.num_iterations}: "
@@ -223,6 +226,7 @@ class DEPSO(BatchingRoutingAlgorithm):
         self.gbest_distance = bp.travel_distance
         self.gbest_batches = bp.best_batches[:]
         self.s_stag_gbest = 0
+        self._prev_gbest = self.gbest_distance   # stagnation referansı
 
         if self.verbose:
             print(f"  [DEPSO] Init: {self.num_particles} particle, "
@@ -365,15 +369,14 @@ class DEPSO(BatchingRoutingAlgorithm):
 
     def _update_stagnation(self) -> None:
         """
-        Gbest geçen iterasyonda güncellendiyse stagnation = 0,
-        aksi halde +1.
-        """
-        if not self.convergence_history:
-            return
+        Gbest bu iterasyonda iyileştiyse stagnation = 0, aksi halde +1.
 
-        # Bu iterasyonda Gbest güncellendi mi?
-        last = self.convergence_history[-1] if self.convergence_history else float('inf')
-        if self.gbest_distance < last:
+        Karşılaştırma referansı `_prev_gbest`, yani BİR ÖNCEKİ iterasyonun
+        sonundaki Gbest. Önceden `convergence_history[-1]` kullanılıyordu;
+        ama o değer bu iterasyonda hemen önce eklenen Gbest'in kendisiydi,
+        dolayısıyla koşul hep False dönüyor ve sayaç asla sıfırlanmıyordu.
+        """
+        if self.gbest_distance < self._prev_gbest - 1e-12:
             self.s_stag_gbest = 0
         else:
             self.s_stag_gbest += 1

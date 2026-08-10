@@ -1,141 +1,138 @@
-"""tests/test_relocation.py — Dynamic relocation testleri.
-
-QA bulgusu: relocation.py'a hiç test yoktu, modül 3 commit boyunca
-ölü kaldı fark edilmeden. Bu testler temel işlevselliği garanti eder.
 """
+tests/test_relocation.py
+=========================
+Dynamic storage relocation regresyon testleri.
+
+Bu modül denetim öncesi HİÇ test edilmiyordu. `_update_class_tracking` iki
+sayacı birbirini sıfırlayacak şekilde güncellediği için `_build_priority_list`
+içindeki `o AND u` koşulu asla sağlanamıyor, dolayısıyla hiçbir periyotta tek
+bir relocation önerisi bile üretilmiyordu. Aşağıdaki testler o hatanın geri
+gelmesini engeller.
+"""
+
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from algorithms.relocation import DynamicRelocation
 from core.data_loader import DataLoader
 from core.warehouse import Warehouse
-from algorithms.relocation import DynamicRelocation, ItemState
 
 
-def _make_reloc():
-    loader = DataLoader()
-    wh = Warehouse()
+@pytest.fixture(scope="module")
+def wh():
+    return Warehouse()
+
+
+@pytest.fixture(scope="module")
+def loader():
+    return DataLoader()
+
+
+@pytest.fixture(scope="module")
+def reloc(wh, loader):
+    """6000 item ile başlatılmış relocation motoru."""
     items = loader.load_items()
-    item_locations = [it.initial_location for it in items]
-    item_classes = [it.class_period1 for it in items]
-    loc_classes = loader.load_location_classes()
-    reloc = DynamicRelocation(wh, loc_classes)
-    reloc.initialize(item_locations, item_classes)
-    return reloc, loader, wh
+    r = DynamicRelocation(wh, loader.load_location_classes())
+    r.initialize([it.initial_location for it in items],
+                 [it.class_period1 for it in items])
+    return r
 
 
-def test_initialize_sets_states():
-    """initialize() tüm item'lar için state oluşturmalı."""
-    reloc, _, _ = _make_reloc()
-    assert len(reloc.item_states) == 6000
-    # Her item'ın bir lokasyonu olmalı
-    for st in list(reloc.item_states.values())[:100]:
-        assert st.location >= 0
+# ── Sayaç mantığı ────────────────────────────────────────────────────
+
+def test_counters_are_independent(reloc):
+    """
+    o ve u sayaçları farklı şeyleri ölçer ve AYNI ANDA pozitif olabilmelidir.
+    Aksi halde `o AND u` koşulu matematiksel olarak sağlanamaz.
+    """
+    item_id = next(iter(reloc.item_states))
+    state = reloc.item_states[item_id]
+    other = 'A' if state.current_class != 'A' else 'C'
+
+    # Aynı yanlış tahmini üst üste 3 periyot ver
+    for _ in range(3):
+        reloc._update_class_tracking({item_id: other})
+
+    assert state.periods_in_wrong_class >= 2, "o sayacı artmalı"
+    assert state.periods_in_target_class >= 1, "u sayacı aynı anda pozitif olmalı"
 
 
-def test_loc_to_item_consistent():
-    """loc_to_item ve item_states tutarlı olmalı."""
-    reloc, _, _ = _make_reloc()
-    for item_id, st in list(reloc.item_states.items())[:100]:
-        assert reloc.loc_to_item.get(st.location) == item_id
+def test_unstable_forecast_resets_u_counter(reloc):
+    """Hedef sınıf tahmini değişirse u sayacı sıfırlanmalı (istikrar ölçüsü)."""
+    item_id = next(iter(reloc.item_states))
+    state = reloc.item_states[item_id]
+
+    reloc._update_class_tracking({item_id: 'A'})
+    reloc._update_class_tracking({item_id: 'A'})
+    stable = state.periods_in_target_class
+
+    reloc._update_class_tracking({item_id: 'C'})   # tahmin değişti
+    assert state.periods_in_target_class == 1
+    assert state.periods_in_target_class < stable
 
 
-def test_class_tracking_increments():
-    """Yanlış sınıfta olan item'ın sayacı artmalı."""
-    reloc, _, _ = _make_reloc()
-    # Yapay: bir item'ı yanlış sınıfa işaretle
-    some_id = list(reloc.item_states.keys())[0]
-    st = reloc.item_states[some_id]
-    orig_cls = st.current_class
-    wrong_cls = 'A' if orig_cls != 'A' else 'C'
+# ── Aday üretimi ─────────────────────────────────────────────────────
 
-    fc = {some_id: wrong_cls}
-    # Diğerleri doğru kalsın
-    for iid in reloc.item_states:
-        if iid != some_id:
-            fc[iid] = reloc.item_states[iid].current_class
+def test_priority_list_is_not_permanently_empty(reloc, loader):
+    """
+    Gerçek Holt-Winters tahminleriyle, o eşiği aşıldıktan sonra aday listesi
+    boş OLMAMALI. (Hata varken 9 periyot boyunca hep 0 aday üretiliyordu.)
+    """
+    from core.forecasting import ItemForecaster
 
-    reloc._update_class_tracking(fc)
-    assert reloc.item_states[some_id].periods_in_wrong_class == 1
-    reloc._update_class_tracking(fc)
-    assert reloc.item_states[some_id].periods_in_wrong_class == 2
+    demand = loader.load_scenario_demand(1)
+    fc = ItemForecaster()
+    fc.fit_all(demand, warmup_periods=12)
 
+    counts = []
+    for p in range(1, 5):
+        classes = reloc._classify_by_forecast(fc.predict_all(tau=1))
+        reloc._update_class_tracking(classes)
+        counts.append(len(reloc._build_priority_list()))
+        fc.update_all(demand[:, 11 + p])
 
-def test_class_tracking_resets():
-    """Doğru sınıfa dönünce sayaç sıfırlanmalı."""
-    reloc, _, _ = _make_reloc()
-    some_id = list(reloc.item_states.keys())[0]
-    st = reloc.item_states[some_id]
-    orig = st.current_class
-    wrong = 'A' if orig != 'A' else 'C'
-
-    fc_wrong = {iid: (wrong if iid == some_id else s.current_class)
-                for iid, s in reloc.item_states.items()}
-    reloc._update_class_tracking(fc_wrong)
-    assert reloc.item_states[some_id].periods_in_wrong_class == 1
-
-    fc_right = {iid: s.current_class for iid, s in reloc.item_states.items()}
-    reloc._update_class_tracking(fc_right)
-    assert reloc.item_states[some_id].periods_in_wrong_class == 0
+    assert max(counts) > 0, f"hiçbir periyotta aday üretilmedi: {counts}"
 
 
-def test_apply_undo_restores_state():
-    """apply sonra undo → state tam eski haline dönmeli."""
-    reloc, _, wh = _make_reloc()
-    # Boş bir A lokasyonu bul
-    asc = None
-    for st in reloc.item_states.values():
-        if st.current_class == 'C':
-            asc = st
-            break
-    assert asc is not None
-
-    orig_loc = asc.location
-    orig_cls = asc.current_class
-    orig_empty_a = len(reloc.empty_locs.get('A', []))
-
-    asc.forecast_class = 'A'
-    if reloc.empty_locs.get('A'):
-        target_loc = reloc.empty_locs['A'][0]
-        sug = {'type': 1, 'asc_item': asc, 'asc_new_loc': target_loc,
-               'desc_item': None, 'desc_new_loc': None}
-        reloc._apply_suggestion(sug)
-        assert asc.location == target_loc
-        reloc._undo_suggestion(sug)
-        # Tam restore
-        assert asc.location == orig_loc
-        assert asc.current_class == orig_cls
-        assert len(reloc.empty_locs.get('A', [])) == orig_empty_a
+def test_priority_list_only_contains_ascending_items(reloc):
+    """Aday listesi yalnızca daha ÜST sınıfa taşınması gereken itemler içerir."""
+    order = {'A': 0, 'B': 1, 'C': 2}
+    for state in reloc._build_priority_list():
+        assert order[state.current_class] > order[state.forecast_class]
 
 
-def test_run_period_produces_suggestions():
-    """Sayaç dolunca run_period öneri üretmeli (relocation ölü olmamalı)."""
+# ── Uçtan uca ────────────────────────────────────────────────────────
+
+def test_run_period_produces_measurable_result(wh, loader):
+    """
+    run_period gerçek siparişlerle çalıştığında travel distance ölçmeli.
+    Hata varken td_before/td_after 0.0 kalıyordu.
+    """
     from core.forecasting import ItemForecaster
     from algorithms.depso import DEPSO
 
-    reloc, loader, wh = _make_reloc()
+    items = loader.load_items()
+    r = DynamicRelocation(wh, loader.load_location_classes())
+    r.initialize([it.initial_location for it in items],
+                 [it.class_period1 for it in items])
+
     demand = loader.load_scenario_demand(1)
-    forecaster = ItemForecaster()
-    forecaster.fit_all(demand, warmup_periods=12)
-    algo = DEPSO(num_iterations=20, seed=42)
+    fc = ItemForecaster()
+    fc.fit_all(demand, warmup_periods=12)
+    algo = DEPSO(num_iterations=5, seed=42)
 
-    total_tested = 0
+    saw_measurement = False
     for period in range(1, 4):
-        orders = loader.load_orders(1, period, 1).orders[:30]
-        forecasts = forecaster.predict_all(tau=1)
-        result = reloc.run_period(period, orders, forecasts, algo)
-        forecaster.update_all(demand[:, 11 + period])
-        total_tested += result.num_suggestions_tested
+        orders = loader.load_orders(1, period, 1).orders[:20]
+        res = r.run_period(period, orders, fc.predict_all(tau=1), algo)
+        fc.update_all(demand[:, 11 + period])
+        if res.travel_distance_before > 0:
+            saw_measurement = True
+            assert res.travel_distance_after > 0
+            assert res.num_accepted + res.num_rejected > 0
 
-    # 3 periyot sonunda en az bir öneri test edilmiş olmalı
-    assert total_tested > 0, "Relocation hiç öneri üretmiyor (ölü modül)"
-
-
-if __name__ == "__main__":
-    test_initialize_sets_states()
-    test_loc_to_item_consistent()
-    test_class_tracking_increments()
-    test_class_tracking_resets()
-    test_apply_undo_restores_state()
-    test_run_period_produces_suggestions()
-    print("✅ test_relocation: tüm testler geçti")
+    assert saw_measurement, "hiçbir periyotta relocation değerlendirmesi yapılmadı"

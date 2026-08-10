@@ -24,6 +24,8 @@ from algorithms.routing.nearest_neighbor import nearest_neighbor_route
 from algorithms.routing.two_opt import two_opt_improve
 from config import ITEMS, RBRS_AE as RBRS_CONFIG
 
+_ROUTE_STALE = -1.0  # sentinel: route needs recomputation (never a valid distance)
+
 
 class RBRS_AE(BatchingRoutingAlgorithm):
 
@@ -39,6 +41,7 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         self._rng               = random.Random(seed)
         self._wh                = None
         self.convergence_history: list[float] = []
+        self._route_cache: dict = {}   # frozenset(locs) -> (route, dist) cache
 
     @property
     def name(self) -> str:
@@ -50,47 +53,22 @@ class RBRS_AE(BatchingRoutingAlgorithm):
 
     def _solve_impl(self, orders: list[Order], warehouse) -> Solution:
         self._wh = warehouse
+        self._route_cache = {}   # her yeni problem için cache sıfırla
         if not orders:
             return Solution(self.name, [], 0.0)
 
         warehouse.build_problem_matrix(orders)
-        self._route_cache = {}  # frozenset(locs) → (route, dist)
 
         # 1) Priority skorları — 1 kez
         priorities = self._priority_scores(orders)
 
-        # 2) Multi-start: 3 farklı başlangıç noktası dene, en iyisini al
-        # Başlangıç 1: Savings warm-start
-        # Başlangıç 2: Regret-based
-        # Başlangıç 3: Savings + farklı shuffle seed
-        best_dist    = float('inf')
-        best_batches = []
-
-        for start_seed in [self._rng.randint(0, 9999) for _ in range(3)]:
-            local_rng = random.Random(start_seed)
-
-            # Savings başlangıcı (local_rng ile shuffle)
-            s_batches = self._savings_start(orders, rng=local_rng)
-            self._compute_routes(s_batches)
-            s_dist = self._total_dist(s_batches)
-
-            # Regret başlangıcı (local_rng ile)
-            r_batches = self._regret_assignment(orders, priorities, rng=local_rng)
-            self._compute_routes(r_batches)
-            r_dist = self._total_dist(r_batches)
-
-            if s_dist <= r_dist:
-                batches    = s_batches
-                start_dist = s_dist
-            else:
-                batches    = r_batches
-                start_dist = r_dist
-
-            if start_dist < best_dist:
-                best_dist    = start_dist
-                best_batches = self._clone(batches)
-
-        batches = self._clone(best_batches)
+        # 2) Regret-only başlangıç (multi-start ve savings kaldırıldı — performance fix)
+        # Önceki versiyon: 3 multi-start × (savings + regret) = aşırı yavaş, kalite kazancı minimal
+        # Yeni versiyon: tek regret assignment, ana iyileştirme iterative loop'ta yapılıyor
+        batches      = self._regret_assignment(orders, priorities)
+        self._compute_routes(batches)
+        best_dist    = self._total_dist(batches)
+        best_batches = self._clone(batches)
         self.convergence_history = [best_dist]
 
         if self.verbose:
@@ -148,22 +126,6 @@ class RBRS_AE(BatchingRoutingAlgorithm):
             best_batches = final_batches
             if self.verbose:
                 print(f"  [RBRS-AE] Final LS: {best_dist:.1f} LU ✓")
-
-        # ── Final 2-opt Cila ───────────────────────────────────────
-        # Ana döngü hız için NN kullandı. Son çözümün her batch'ine bir kez
-        # 2-opt uygula — rota kalitesini geri getirir, ucuzdur (batch başına 1 kez).
-        polish_dist = 0.0
-        for b in best_batches:
-            if len(b.locations) > 2:
-                route, dist = nearest_neighbor_route(list(set(b.locations)), self._wh)
-                route, dist = two_opt_improve(route, self._wh)
-                b.route = route
-                b.travel_distance = dist
-            polish_dist += b.travel_distance
-        if polish_dist < best_dist - 1e-9:
-            best_dist = polish_dist
-            if self.verbose:
-                print(f"  [RBRS-AE] Final 2-opt: {best_dist:.1f} LU ✓")
 
         return Solution(
             algorithm_name=self.name,
@@ -236,35 +198,27 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         remaining = len(orders)
 
         while remaining > 0:
-            best_score = -1e18
+            best_score = -1.0
             best_i     = -1
-            best_bidx  = -1
+            best_bidx  = -1   # -1 = yeni batch
 
             for i, o in enumerate(orders):
                 if assigned[i]:
                     continue
 
                 costs = self._insertion_costs(o, batches)
-                # costs: [(delta, batch_idx), ...] sıralı (ucuz önce), -1 = yeni batch
+                # costs: [(delta, batch_idx), ...] sıralı, -1 = yeni batch
 
-                # En iyi hedef = en ucuz seçenek
-                target = costs[0][1]
-
-                # Regret = "en iyi mevcut batch'e koymak" ile "yeni batch açmak"
-                # arasındaki fark. Yeni batch açmak zorunda kalırsak ne kaybederiz?
-                # Bu, kapasiteyi dolduran atamaları önceliklendirir.
-                existing = [c for c in costs if c[1] != -1]
-                new_cost = next((c[0] for c in costs if c[1] == -1), 0.0)
-
-                if existing:
-                    best_existing = existing[0][0]
-                    # Yeni batch açmanın ekstra maliyeti = kaçırma pişmanlığı
-                    regret = new_cost - best_existing
+                if len(costs) >= 2:
+                    regret = costs[1][0] - costs[0][0]
+                    target = costs[0][1]
+                elif len(costs) == 1:
+                    regret = costs[0][0]
+                    target = costs[0][1]
                 else:
-                    # Hiç mevcut batch yok (ilk atama) → düşük öncelik
                     regret = 0.0
+                    target = -1
 
-                # Priority ile ağırlıklandır: zor + yüksek-regret önce
                 score = regret * (1.0 + priorities[i])
                 if score > best_score:
                     best_score = score
@@ -280,7 +234,8 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 b = batches[best_bidx]
                 b.orders.append(o)
                 b.total_weight += o.total_weight
-                b.travel_distance = 0.0  # yeniden hesaplanmalı
+                # Batch içeriği değişti → rotası artık geçersiz.
+                b.travel_distance = _ROUTE_STALE
 
             assigned[best_i] = True
             remaining -= 1
@@ -289,14 +244,22 @@ class RBRS_AE(BatchingRoutingAlgorithm):
 
     def _insertion_costs(self, order: Order,
                          batches: list[Batch]) -> list[tuple[float, int]]:
-        """Mevcut batch'lere + yeni batch'e insertion maliyetleri (sıralı)."""
+        """
+        Mevcut batch'lere + yeni batch'e MARJİNAL insertion maliyetleri (sıralı).
+
+        Maliyet = rota(batch + order) - rota(batch). İkinci terim batch'in
+        güncel rota maliyeti olmalı. `<= 0.0` kontrolü hem stale işaretini
+        (_ROUTE_STALE) hem de hiç hesaplanmamış (0.0) batch'leri yakalar;
+        önceden sadece `< 0.0` bakıldığı için taban 0 kalıyor ve maliyet
+        marjinal delta yerine birleşik rotanın TAMAMI olarak hesaplanıyordu.
+        """
         costs = []
         new_locs = order.locations
 
         for idx, b in enumerate(batches):
             if b.total_weight + order.total_weight > self.capacity:
                 continue
-            if b.travel_distance == 0.0 and b.orders:
+            if b.orders and b.travel_distance <= 0.0:
                 _, b.travel_distance = self._route_cost(b.locations)
             _, c = self._route_cost(b.locations + new_locs)
             costs.append((c - b.travel_distance, idx))
@@ -313,12 +276,15 @@ class RBRS_AE(BatchingRoutingAlgorithm):
 
     def _shift(self, batches: list[Batch]) -> tuple[list[Batch], bool]:
         """
-        First-improvement shift: bir order için ilk kazançlı hedefi bulunca
-        uygula ve dur (hız için). Bir iterasyonda bir hareket.
+        Best-improvement shift: her order için tüm feasible hedeflere bak,
+        en fazla kazanç sağlayanı seç. Rastgele değil sistematik.
         """
         if len(batches) < 2:
             return batches, False
 
+        changed = False
+
+        # Tüm (batch, order) çiftlerini karıştır, shift_attempts kadar dene
         candidates = [(b_idx, o_idx)
                       for b_idx, b in enumerate(batches)
                       for o_idx in range(len(b.orders))]
@@ -331,13 +297,18 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 continue
             o = src.orders[o_idx]
 
+            # Kaynak batch'in order çıkarılmış hali
             src_locs_new = [loc
                             for ord_ in src.orders
                             for loc in ord_.locations
                             if ord_ is not o]
             _, sd = self._route_cost(src_locs_new) if src_locs_new else ([], 0.0)
 
-            # İlk kazançlı hedefi bul ve uygula (first-improvement)
+            # Tüm hedef batch'lere bak, en iyi kazancı bul
+            best_gain = 1e-9
+            best_dst_idx = None
+            best_dd = 0.0
+
             for dst_idx, dst in enumerate(batches):
                 if dst_idx == src_idx:
                     continue
@@ -345,26 +316,31 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                     continue
                 _, dd = self._route_cost(dst.locations + o.locations)
                 gain = (src.travel_distance + dst.travel_distance) - (sd + dd)
-                if gain > 1e-9:
-                    src.orders.pop(o_idx)
-                    src.total_weight    -= o.total_weight
-                    src.travel_distance  = sd
-                    dst.orders.append(o)
-                    dst.total_weight    += o.total_weight
-                    dst.travel_distance  = dd
-                    batches = [b for b in batches if b.orders]
-                    self._renumber(batches)
-                    return batches, True  # ilk iyileşmede dur
+                if gain > best_gain:
+                    best_gain    = gain
+                    best_dst_idx = dst_idx
+                    best_dd      = dd
 
-        return batches, False
+            if best_dst_idx is not None:
+                dst = batches[best_dst_idx]
+                src.orders.pop(o_idx)
+                src.total_weight    -= o.total_weight
+                src.travel_distance  = sd
+                dst.orders.append(o)
+                dst.total_weight    += o.total_weight
+                dst.travel_distance  = best_dd
+                changed = True
+
+        batches = [b for b in batches if b.orders]
+        self._renumber(batches)
+        return batches, changed
 
     # ══════════════════════════════════════════════════════════════
     # 3b) SWAP
     # ══════════════════════════════════════════════════════════════
 
     def _swap(self, batches: list[Batch]) -> tuple[list[Batch], bool]:
-        """İki farklı batch'ten birer order takas et — iyileşme varsa kabul.
-        Early-exit: ilk iyileşmede döner (hız için)."""
+        """İki farklı batch'ten birer order takas et — iyileşme varsa kabul."""
         if len(batches) < 2:
             return batches, False
 
@@ -396,7 +372,6 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 b2.orders.remove(o2); b2.orders.append(o1)
                 b2.total_weight = w2; b2.travel_distance = d2
                 changed = True
-                break  # ilk iyileşmede dur — bir sonraki iterasyona geç
 
         return batches, changed
 
@@ -433,13 +408,29 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         freed_pri = [priorities[oid_map[id(o)]] if id(o) in oid_map else 0.5
                      for o in freed]
 
-        # Tüm order'ları (kept içindeki + freed) tek havuzda regret ile yeniden ata
-        # QA Bug 3: freed_batches sonucunu yok saymak yerine direkt kept'e entegre et
-        all_pool_orders  = [o for b in kept for o in b.orders] + freed
-        all_pool_pri     = ([priorities[oid_map[id(o)]] if id(o) in oid_map else 0.5
-                             for b in kept for o in b.orders] + freed_pri)
+        # Performance fix: tüm pool'u yeniden assign etmek yerine sadece freed'i kept'e ekle.
+        # Eski yaklaşım her iter'de N×B insertion cost hesabı yapıyordu (gereksiz iş).
+        # Freed order'ları priority'ye göre sıralayıp greedy regret ile yerleştir.
+        new_batches = kept[:]
+        for o, pri in sorted(zip(freed, freed_pri), key=lambda x: -x[1]):
+            costs = self._insertion_costs(o, new_batches)
+            if not costs:
+                # Hiç feasible yer yok, yeni batch aç
+                new_batches.append(Batch(batch_id=len(new_batches),
+                                          orders=[o],
+                                          total_weight=o.total_weight))
+                continue
+            _, target = costs[0]  # En düşük cost'lu hedef
+            if target == -1:
+                new_batches.append(Batch(batch_id=len(new_batches),
+                                          orders=[o],
+                                          total_weight=o.total_weight))
+            else:
+                new_batches[target].orders.append(o)
+                new_batches[target].total_weight += o.total_weight
+                # Route'u invalidate et, _compute_routes daha sonra yeniden hesaplayacak
+                new_batches[target].travel_distance = _ROUTE_STALE
 
-        new_batches = self._regret_assignment(all_pool_orders, all_pool_pri)
         self._renumber(new_batches)
         return new_batches
 
@@ -552,14 +543,15 @@ class RBRS_AE(BatchingRoutingAlgorithm):
     def _route_cost(self, locations: list[int]) -> tuple[list[int], float]:
         if not locations:
             return [self._wh.DEPOT, self._wh.DEPOT], 0.0
-        # Cache: aynı lokasyon kümesi için tekrar hesaplama
+        # Cache: aynı lokasyon kümesi için 2-opt'u tekrar çalıştırma
         key = frozenset(locations)
         cached = self._route_cache.get(key)
         if cached is not None:
             return cached
-        route, dist = nearest_neighbor_route(list(key), self._wh)
-        self._route_cache[key] = (route, dist)
-        return route, dist
+        route, _ = nearest_neighbor_route(locations, self._wh)
+        result = two_opt_improve(route, self._wh)
+        self._route_cache[key] = result
+        return result
 
     def _compute_routes(self, batches: list[Batch]) -> None:
         for b in batches:

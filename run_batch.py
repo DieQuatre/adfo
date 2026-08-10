@@ -66,15 +66,88 @@ PAPER = {
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# DATASET ÜRETİCİ (sadece sipariş dosyaları)
+# SİPARİŞ KAYNAĞI
+# ════════════════════════════════════════════════════════════════════════════
+#
+# BİRİNCİL yol: paper parametreleriyle üretilmiş data*/ dizinlerinden örnekle.
+# YEDEK yol:   generate_orders() ile sentetik üret (yalnızca dizin yoksa).
+#
+# Neden önemli: sentetik üretici talebi ağırlıklı olarak A-sınıfı (depoya
+# yakın) lokasyonlara yığıyor. Aynı senaryoda (50_2_6) SOP baseline'ı gerçek
+# veri setinde 5057 LU iken sentetik üreticide 2160 LU çıkıyor; batching
+# kazancı yapay olarak şişip DEPSO vs SOP oranı paper'ı 5-10 puan aşıyor.
+# Paper karşılaştırması yapılacaksa kaynak data*/ olmalı.
+
+DATA_DIR_MAP = {
+    (2,  2): 'data_2_2',   (2,  6): 'data',      (2, 10): 'data_2_10',
+    (6,  2): 'data_6_2',   (6,  6): 'data_6_6',  (6, 10): 'data_6_10',
+    (10, 2): 'data_10_2',  (10, 6): 'data_10_6', (10, 10): 'data_10_10',
+}
+
+_POOL_CACHE: dict = {}
+
+
+def load_pool(n_maxol: int, a_maxol: int) -> list:
+    """(n_maxol, a_maxol) kombinasyonunun tüm alt-periyot siparişlerini topla."""
+    key = (n_maxol, a_maxol)
+    if key in _POOL_CACHE:
+        return _POOL_CACHE[key]
+
+    ddir = Path(__file__).parent / DATA_DIR_MAP[key]
+    if not ddir.exists():
+        _POOL_CACHE[key] = []
+        return []
+
+    loader = DataLoader(ddir)
+    pool = []
+    for sub in range(1, 21):
+        try:
+            pool.extend(loader.load_orders(1, 1, sub).orders)
+        except FileNotFoundError:
+            pass
+    _POOL_CACHE[key] = pool
+    return pool
+
+
+def sample_instances(n_maxol: int, a_maxol: int, k: int,
+                     n_instances: int) -> list:
+    """
+    Havuzdan k siparişlik n_instances örnek çek.
+
+    Tohum formülü run_paper_scenarios.py ile aynı (inst_id*7 + 42 + k), böylece
+    iki betiğin sonuçları karşılaştırılabilir kalır. Tohumun k'ya bağlı olması,
+    farklı k değerlerinin farklı alt küme almasını garantiler.
+    """
+    pool = load_pool(n_maxol, a_maxol)
+    if len(pool) < k:
+        return []
+
+    out = []
+    for inst_id in range(n_instances):
+        seed = inst_id * 7 + 42 + k
+        shuffled = pool[:]
+        random.Random(seed).shuffle(shuffled)
+        out.append((shuffled[:k], seed))
+    return out
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# YEDEK DATASET ÜRETİCİ (yalnızca data*/ dizini yoksa kullanılır)
 # ════════════════════════════════════════════════════════════════════════════
 
 def generate_orders(n_maxol: int, a_maxol: int,
                     n_instances: int = 5,
-                    seed: int = 42) -> list:
+                    seed: int = 42,
+                    target_orders: int = 500) -> list:
     """
     (n_maxol, a_maxol) kombinasyonu için n_instances instance üret.
-    Her instance: 50 farklı sipariş seti (shuffle).
+
+    target_orders: her instance'ta üretilecek sipariş sayısı. Bu parametre
+    şart: item havuzu (n_maxol, a_maxol)'a göre yalnızca 19-110 sipariş
+    besleyebiliyordu, dolayısıyla k=50/100/150/200 senaryoları aynı kısa
+    listeyi alıp BİREBİR AYNI deneyi 4 kez raporluyordu. Havuz yetmezse
+    aşağıda talep dağılımı korunarak çoğaltılır.
+
     Döndürür: [(orders_list, seed), ...] listesi
     """
     base_loader = DataLoader(Path(__file__).parent / 'data')
@@ -95,19 +168,29 @@ def generate_orders(n_maxol: int, a_maxol: int,
         rng = np.random.default_rng(inst_seed)
         local_rng = random.Random(inst_seed)
 
-        # Item havuzu oluştur
+        # Item havuzu oluştur (talep ile orantılı)
         item_pool = []
         for m in range(num_items):
             cnt = int(item_ol[m]) // 20  # alt-periyot payı
             item_pool.extend([m] * max(cnt, 0))
         rng.shuffle(item_pool)
 
+        # Havuz hedeflenen sipariş sayısını besleyemiyorsa, AYNI talep
+        # dağılımını koruyarak çoğalt. (Aksi halde k=200 istenirken havuz
+        # ~30 siparişte tükeniyor ve k=50/100/150/200 aynı listeyi alıyor.)
+        if item_pool:
+            needed = target_orders * n_maxol
+            while len(item_pool) < needed:
+                extra = item_pool[:]
+                rng.shuffle(extra)
+                item_pool.extend(extra)
+
         # Siparişler üret
         from core.data_loader import Order, OrderLine
         orders = []
         pool_copy = list(item_pool[:])
 
-        while len(orders) < 500 and pool_copy:
+        while len(orders) < target_orders and pool_copy:
             n_ol = local_rng.randint(1, n_maxol)
             orderlines = []
             used = set()
@@ -164,8 +247,22 @@ def run_one_scenario(scenario: dict, n_instances: int,
     print(f"\n  [{name}]  K={k}, N_maxol={n}, A_maxol={a}  "
           f"(paper DEPSO vs SOP: {paper}%)")
 
-    # Instance'ları üret
-    instances = generate_orders(n, a, n_instances)
+    # Sipariş kaynağı: önce paper veri seti, olmazsa sentetik yedek.
+    instances = sample_instances(n, a, k, n_instances)
+    source = 'data_pool'
+    if not instances:
+        source = 'synthetic'
+        print(f"    ⚠ {DATA_DIR_MAP[(n, a)]}/ havuzu yetersiz — sentetik "
+              f"üreticiye düşülüyor. Paper karşılaştırması güvenilmez olur; "
+              f"önce `python generate_all_scenarios.py` çalıştırın.")
+        # k'yı MUTLAKA geçir, yoksa farklı k'lar aynı listeyi alır.
+        instances = generate_orders(n, a, n_instances, target_orders=k)
+
+    short = [len(o) for o, _ in instances if len(o) < k]
+    if short:
+        print(f"    ⚠ UYARI: {len(short)} instance k={k}'ya ulaşamadı "
+              f"(üretilen: {short}). Sonuçlar k ile etiketlenmemeli.")
+    print(f"    kaynak: {source}, {len(instances)} instance")
 
     results = {alg: {'td': [], 'rt': []}
                for alg in ['SOP', 'FCFS', 'DEPSO', 'RBRS-AE']}
@@ -215,7 +312,7 @@ def run_one_scenario(scenario: dict, n_instances: int,
     depso_vs_sop  = stats.get('DEPSO', {}).get('vs_sop_mean', 0)
     rbrs_vs_sop   = stats.get('RBRS-AE', {}).get('vs_sop_mean', 0)
     diff          = round(depso_vs_sop - paper, 2) if isinstance(paper, float) else '?'
-    ok            = "✅" if isinstance(diff, float) and abs(diff) < 8 else "⚠️"
+    ok            = "✅" if isinstance(diff, float) and abs(diff) < 5 else "⚠️"
 
     print(f"    → DEPSO vs SOP: {depso_vs_sop:.2f}%  "
           f"(paper: {paper}%  fark: {diff}%  {ok})")
@@ -223,7 +320,7 @@ def run_one_scenario(scenario: dict, n_instances: int,
 
     return {'scenario': name, 'k': k, 'n_maxol': n, 'a_maxol': a,
             'paper_vs_sop': paper, 'n_instances': len(instances),
-            'stats': stats}
+            'order_source': source, 'stats': stats}
 
 
 # ════════════════════════════════════════════════════════════════════════════
