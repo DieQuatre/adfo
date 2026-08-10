@@ -68,24 +68,46 @@ def _git_commit() -> str:
         return "unknown"
 
 
-def load_batches() -> tuple[list, dict]:
-    """batch_*.json dosyalarını oku; sonuçları ve koşum ayarlarını döndür."""
-    rows, meta = [], {}
+def load_batches() -> tuple[list, dict, list]:
+    """
+    batch_*.json dosyalarını oku.
+
+    Döndürür: (satırlar, ilk batch'in ayarları, uyarı listesi).
+    Uyarılar hem ekrana hem RAPORUN İÇİNE yazılır: rapor tek başına dolaşıma
+    girdiğinde "5 instance / 500 iterasyon" başlığı, aslında 100 iterasyonla
+    veya sentetik siparişle koşulmuş batch'leri gizlememeli.
+    """
+    rows, meta, warnings = [], {}, []
     for i in range(1, 8):
         path = Path("results") / f"batch_{i}.json"
         if not path.exists():
-            print(f"  ⚠ {path} yok — önce `python run_batch.py --batch {i}`")
+            msg = f"{path.name} yok — `python run_batch.py --batch {i}` çalıştırılmamış"
+            print(f"  ⚠ {msg}")
+            warnings.append(msg)
             continue
+
         data = json.loads(path.read_text())
         meta.setdefault("n_instances", data.get("n_instances"))
         meta.setdefault("depso_iter", data.get("depso_iter"))
+
         if (data.get("n_instances") != meta["n_instances"]
                 or data.get("depso_iter") != meta["depso_iter"]):
-            print(f"  ⚠ {path} farklı ayarla koşulmuş "
-                  f"(n={data.get('n_instances')}, iter={data.get('depso_iter')}) "
-                  f"— batch'ler aynı konfigürasyonla yeniden koşulmalı")
+            msg = (f"{path.name} farklı ayarla koşulmuş "
+                   f"(n={data.get('n_instances')}, iter={data.get('depso_iter')}); "
+                   f"beklenen n={meta['n_instances']}, iter={meta['depso_iter']}")
+            print(f"  ⚠ {msg}")
+            warnings.append(msg)
+
+        # Sentetik sipariş kaynağı paper karşılaştırmasını geçersiz kılar.
+        synthetic = sorted({r['scenario'] for r in data.get("results", [])
+                            if r.get('order_source') not in (None, 'data_pool')})
+        if synthetic:
+            msg = f"{path.name} sentetik sipariş kaynağı kullanmış: {', '.join(synthetic)}"
+            print(f"  ⚠ {msg}")
+            warnings.append(msg)
+
         rows.extend(data.get("results", []))
-    return rows, meta
+    return rows, meta, warnings
 
 
 def check_independence(rows: list) -> list[str]:
@@ -104,7 +126,7 @@ def check_independence(rows: list) -> list[str]:
     return dupes
 
 
-def write_report(rows: list, meta: dict, dupes: list) -> str:
+def write_report(rows: list, meta: dict, dupes: list, warnings: list) -> str:
     n_inst = meta.get("n_instances", "?")
     d_iter = meta.get("depso_iter", "?")
 
@@ -115,6 +137,18 @@ def write_report(rows: list, meta: dict, dupes: list) -> str:
     lines.append(f"Kod sürümü: `{_git_commit()}`  ")
     lines.append("Kaynak: `results/batch_1..7.json`")
     lines.append("")
+
+    # Başlıktaki konfigürasyon tüm satırlar için geçerli değilse, raporu
+    # okuyan kişi bunu tablodan önce görmeli.
+    if warnings:
+        lines.append("> ⚠️ **BU TABLO TEK TİP DEĞİL** — başlıktaki "
+                     "konfigürasyon bütün satırlar için geçerli değil:")
+        lines.append("")
+        lines += [f">   - {w}" for w in warnings]
+        lines.append(">")
+        lines.append("> Etkilenen batch'leri aynı ayarla yeniden koşmadan bu "
+                     "tabloyu yayımlamayın.")
+        lines.append("")
     lines.append("| Senaryo | DEPSO vs SOP | Paper | Fark | RBRS-AE vs SOP "
                  "| DEPSO vs FCFS | Durum |")
     lines.append("|---|---|---|---|---|---|---|")
@@ -162,7 +196,7 @@ def write_report(rows: list, meta: dict, dupes: list) -> str:
 
 
 def main():
-    rows, meta = load_batches()
+    rows, meta, warnings = load_batches()
     if not rows:
         print("Sonuç yok. Önce: python run_batch.py --batch 1 ... --batch 7")
         sys.exit(1)
@@ -178,7 +212,7 @@ def main():
 
     Path("results").mkdir(exist_ok=True)
     Path("results/paper_35_scenarios.md").write_text(
-        write_report(rows, meta, dupes))
+        write_report(rows, meta, dupes, warnings))
 
     Path("results/paper_35_scenarios.json").write_text(json.dumps({
         "meta": {
@@ -187,6 +221,7 @@ def main():
             "depso_iter": meta.get("depso_iter"),
             "git_commit": _git_commit(),
             "duplicate_scenarios": dupes,
+            "config_warnings": warnings,
         },
         "results": rows,
         "paper_reference": PAPER,
