@@ -166,16 +166,27 @@ def _run_instance(task: tuple) -> dict:
     random.Random(seed).shuffle(shuffled)
     orders = shuffled[:k]
 
-    algos = {
+    out = {'scenario': name, 'inst_id': inst_id, 'seed': seed}
+    out.update(solve_all(orders, _WH, seed, depso_iter))
+    return out
+
+
+def make_algorithms(seed: int, depso_iter: int) -> dict:
+    """Karşılaştırılan algoritmalar; ayarlar config.py'den (DEPSO iterasyonu hariç)."""
+    return {
         'SOP':     SOP(),
         'FCFS':    FCFS(),
         'DEPSO':   DEPSO(num_iterations=depso_iter, seed=seed),
-        'RBRS-AE': RBRS_AE(seed=seed),     # ayarlar config.RBRS_AE
-        'ALNS':    ALNS(seed=seed),        # ayarlar config.ALNS
+        'RBRS-AE': RBRS_AE(seed=seed),
+        'ALNS':    ALNS(seed=seed),
     }
-    out = {'scenario': name, 'inst_id': inst_id, 'seed': seed}
+
+
+def solve_all(orders, warehouse, seed: int, depso_iter: int) -> dict:
+    algos = make_algorithms(seed, depso_iter)
+    out = {}
     for alg in ALGORITHMS:
-        sol = algos[alg].solve(orders, _WH)
+        sol = algos[alg].solve(orders, warehouse)
         out[alg] = {'td': sol.total_travel_distance,
                     'rt': sol.runtime_seconds,
                     'batches': sol.num_batches}

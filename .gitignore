@@ -21,3 +21,6 @@ env/
 # Hızlı deneme çıktısı
 results/only.json
 results/checkpoints/
+
+# Üretilen örnekler (yeniden üretilebilir)
+instances/
