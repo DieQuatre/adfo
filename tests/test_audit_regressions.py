@@ -11,7 +11,7 @@ Denetimde bulunan üç hatanın geri gelmesini engelleyen testler:
    döndürüyordu (batch tabanı hep 0.0 kalıyordu). Sonuç: regret ataması
    kapasite alt sınırının 10 katı batch açıyordu.
 
-3. `run_batch.generate_orders` sipariş sayısı `k`'yı almıyordu; havuz erken
+3. Senaryo örneklemesi sipariş sayısı `k`'yı almıyordu; havuz erken
    tükendiği için k=50/100/150/200 senaryoları AYNI listeyi alıp aynı deneyi
    4 kez raporluyordu.
 """
@@ -131,23 +131,29 @@ def test_regret_assignment_respects_capacity_lower_bound(orders, wh):
 # ── 3. Senaryo üretimi gerçekten k sipariş üretiyor mu ───────────────
 
 @pytest.mark.parametrize("n_maxol,a_maxol", [(2, 6), (6, 2), (10, 10)])
-def test_generate_orders_honours_target(n_maxol, a_maxol):
-    from run_batch import generate_orders
+def test_sample_instances_honours_k(n_maxol, a_maxol):
+    from run_batch import sample_instances
     for k in (50, 200):
-        inst = generate_orders(n_maxol, a_maxol, n_instances=1, target_orders=k)
-        assert len(inst[0][0]) == k, (
-            f"n_maxol={n_maxol} a_maxol={a_maxol} k={k}: "
-            f"{len(inst[0][0])} sipariş üretildi"
+        inst = sample_instances(n_maxol, a_maxol, k, n_instances=2)
+        assert all(len(orders) == k for orders, _ in inst), (
+            f"n_maxol={n_maxol} a_maxol={a_maxol} k={k}: k sipariş çekilmedi"
         )
 
 
 def test_different_k_produce_different_instances():
     """
-    k=50 ve k=200 aynı deney OLMAMALI. (Hata varken havuz erken tükendiği
-    için ikisi de aynı kısa listeyi alıyordu.)
+    k=50 ve k=200 aynı deney OLMAMALI: tohum k'ya bağlı olduğu için
+    küçük örnek büyüğün ilk 50 siparişi de olmamalı.
     """
-    from run_batch import generate_orders
-    small = generate_orders(6, 2, n_instances=1, target_orders=50)[0][0]
-    large = generate_orders(6, 2, n_instances=1, target_orders=200)[0][0]
-    assert len(small) != len(large)
-    assert sum(o.total_weight for o in large) > sum(o.total_weight for o in small)
+    from run_batch import sample_instances
+    small = sample_instances(6, 2, 50, n_instances=1)[0][0]
+    large = sample_instances(6, 2, 200, n_instances=1)[0][0]
+    assert len(small) == 50 and len(large) == 200
+    assert [id(o) for o in small] != [id(o) for o in large[:50]]
+
+
+def test_sample_instances_fails_loudly_when_pool_too_small():
+    """Havuz yetersizse sessizce sentetik veriye düşmek yerine hata vermeli."""
+    from run_batch import sample_instances
+    with pytest.raises(RuntimeError):
+        sample_instances(2, 6, 10**7, n_instances=1)

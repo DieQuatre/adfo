@@ -1,5 +1,9 @@
 # Warehouse Optimization — Paper-2 + RBRS-AE
 
+> **Açık sorunlar:** 2026-09-28 denetiminde bulunan ve henüz düzeltilmemiş
+> hatalar için bkz. [`docs/DENETIM_2026-09-28.md`](docs/DENETIM_2026-09-28.md).
+> Bu hatalar düzeltilene kadar aşağıdaki sonuçlar ön sonuç sayılmalıdır.
+
 Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
 
 **Bağımsız denetim ile doğrulanmış.** Rapor: 6 kritik kusur bulundu ve düzeltildi,
@@ -22,7 +26,7 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
 | `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
 | `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
 | `run_batch.py` | ✅ 35 senaryo koşucu |
-| `tests/` | ✅ **78 test**, tamamı geçiyor |
+| `tests/` | ✅ **79 test**, tamamı geçiyor |
 
 ---
 
@@ -128,7 +132,7 @@ yeniden koşup sonuçların üzerine yazıyordu.
 python -m pytest tests/ -v
 ```
 
-**78 test, tamamı geçiyor** (önceki: 53, +25 denetim sonrası eklendi).
+**79 test, tamamı geçiyor.**
 
 | Dosya | Kapsam |
 |---|---|
@@ -158,8 +162,10 @@ warehouse_optimization/
 ├── benchmarks/
 ├── ui/
 │   └── pages/
-├── tests/                 # 78 test
-├── run_batch.py
+├── tests/                 # 79 test
+├── run_batch.py           # tek deney koşucusu (35 senaryo)
+├── regen_35.py            # batch sonuçlarından rapor üretir
+├── docs/                  # denetim raporları ve notlar
 ├── data/                  # 370 JSON dataset (paper parametreleriyle)
 └── results/                # batch_1..7.json — bağımsız doğrulanmış
 ```
@@ -167,5 +173,5 @@ warehouse_optimization/
 ## Kaynaklar
 
 Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
-`tests/` (78 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
+`tests/` (79 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
 `master`'a birleştirildi.
