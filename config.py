@@ -113,13 +113,15 @@ RBRS_AE = {
     # I(b) = 0.7*(dist/orderCount) + 0.3*(1-utilization) ağırlıkları,
     # adaptif eleme oranı (%20 → %10) şu an algorithms/rbrs_ae.py içinde sabit.
 
-    # Local search (yüksek değerler — DEPSO'yu geçmek için)
-    'shift_attempts': 40,
-    'swap_attempts': 40,
+    # TEK KAYNAK: arayüz, run_batch.py ve testler bu değerleri kullanır.
+    # Spec: 100 iterasyon, 15 iterasyon iyileşme yoksa dur.
+    # Deneme sayıları yayınlanan 35 senaryo koşumundaki değerler.
+    'shift_attempts': 150,
+    'swap_attempts': 150,
 
     # Stopping criteria
-    'max_iterations': 60,
-    'max_no_improvement': 12,
+    'max_iterations': 100,
+    'max_no_improvement': 15,
 }
 
 

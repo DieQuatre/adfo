@@ -20,8 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.data_loader import Order
 from algorithms.base import BatchingRoutingAlgorithm, Batch, Solution
-from algorithms.routing.nearest_neighbor import nearest_neighbor_route
-from algorithms.routing.two_opt import two_opt_improve
+from algorithms.routing.route_cache import RouteCache
 from config import ITEMS, RBRS_AE as RBRS_CONFIG
 
 _ROUTE_STALE = -1.0  # sentinel: route needs recomputation (never a valid distance)
@@ -32,16 +31,18 @@ class RBRS_AE(BatchingRoutingAlgorithm):
     def __init__(self, max_iterations=None, max_no_improvement=None,
                  shift_attempts=None, swap_attempts=None,
                  seed=None, verbose=False):
-        self.max_iterations     = max_iterations     or RBRS_CONFIG['max_iterations']
-        self.max_no_improvement = max_no_improvement or RBRS_CONFIG['max_no_improvement']
-        self.shift_attempts     = shift_attempts     or RBRS_CONFIG['shift_attempts']
-        self.swap_attempts      = swap_attempts      or RBRS_CONFIG['swap_attempts']
+        def _cfg(value, key):
+            return value if value is not None else RBRS_CONFIG[key]
+        self.max_iterations     = _cfg(max_iterations, 'max_iterations')
+        self.max_no_improvement = _cfg(max_no_improvement, 'max_no_improvement')
+        self.shift_attempts     = _cfg(shift_attempts, 'shift_attempts')
+        self.swap_attempts      = _cfg(swap_attempts, 'swap_attempts')
         self.capacity           = ITEMS['picker_capacity_WU']
         self.verbose            = verbose
         self._rng               = random.Random(seed)
         self._wh                = None
         self.convergence_history: list[float] = []
-        self._route_cache: dict = {}   # frozenset(locs) -> (route, dist) cache
+        self._routes: RouteCache | None = None   # ortak rota servisi
 
     @property
     def name(self) -> str:
@@ -53,11 +54,11 @@ class RBRS_AE(BatchingRoutingAlgorithm):
 
     def _solve_impl(self, orders: list[Order], warehouse) -> Solution:
         self._wh = warehouse
-        self._route_cache = {}   # her yeni problem için cache sıfırla
         if not orders:
             return Solution(self.name, [], 0.0)
 
         warehouse.build_problem_matrix(orders)
+        self._routes = RouteCache(warehouse)   # her yeni problem için sıfırdan
 
         # 1) Priority skorları — 1 kez
         priorities = self._priority_scores(orders)
@@ -120,6 +121,10 @@ class RBRS_AE(BatchingRoutingAlgorithm):
             if not c1 and not c2:
                 break
 
+        # _final_shift/_final_swap yalnızca travel_distance'ı günceller; rota
+        # listelerini burada ortak servisten yeniden al. (Eskiden atlanıyordu:
+        # mesafe doğruydu ama çizilen rota eski batch içeriğine aitti.)
+        self._compute_routes(final_batches)
         final_dist = self._total_dist(final_batches)
         if final_dist < best_dist - 1e-9:
             best_dist    = final_dist
@@ -133,6 +138,7 @@ class RBRS_AE(BatchingRoutingAlgorithm):
             total_travel_distance=best_dist,
             iterations_used=it,
             convergence_history=self.convergence_history,
+            extra_info={'route_cache_size': len(self._routes)},
         )
 
     # ══════════════════════════════════════════════════════════════
@@ -530,17 +536,7 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         return batches, True
 
     def _route_cost(self, locations: list[int]) -> tuple[list[int], float]:
-        if not locations:
-            return [self._wh.DEPOT, self._wh.DEPOT], 0.0
-        # Cache: aynı lokasyon kümesi için 2-opt'u tekrar çalıştırma
-        key = frozenset(locations)
-        cached = self._route_cache.get(key)
-        if cached is not None:
-            return cached
-        route, _ = nearest_neighbor_route(locations, self._wh)
-        result = two_opt_improve(route, self._wh)
-        self._route_cache[key] = result
-        return result
+        return self._routes.get(locations)
 
     def _compute_routes(self, batches: list[Batch]) -> None:
         for b in batches:

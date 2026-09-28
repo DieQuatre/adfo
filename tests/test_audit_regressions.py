@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from algorithms.base import Batch
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from algorithms.routing.route_cache import RouteCache
 from config import ITEMS
 from core.data_loader import DataLoader
 from core.warehouse import Warehouse
@@ -46,33 +47,53 @@ def orders(wh):
 # ── 1. DEPSO stagnation ──────────────────────────────────────────────
 
 def test_stagnation_resets_when_gbest_improves(orders, wh):
-    """Gbest düştüğü iterasyonda sayaç 0 olmalı."""
-    d = DEPSO(num_iterations=40, seed=42)
+    """Gbest önceki iterasyona göre düştüyse sayaç 0 olmalı (birim test)."""
+    d = DEPSO(num_iterations=10, seed=42)
     d._orders, d._warehouse, d._K = orders, wh, len(orders)
     d.convergence_history = []
     d._initialize()
 
-    saw_improvement = False
-    for it in range(1, 41):
+    d.s_stag_gbest = 5
+    d._prev_gbest = d.gbest_distance + 10.0     # bu iterasyonda iyileşme var
+    d.convergence_history.append(d.gbest_distance)
+    d._update_stagnation()
+    assert d.s_stag_gbest == 0
+
+
+def test_stagnation_zero_after_every_improving_iteration(orders, wh):
+    """
+    Gerçek koşumda: bir iterasyonun sonunda Gbest bir öncekinden iyiyse
+    (hareketle ya da yerel aramayla) sayaç 0 olmalı.
+
+    Not: Bu örnekte savings parçacığı çok güçlü; iyileşmeler yalnızca yerel
+    aramadan geliyor. Eski kodda yerel arama yalnızca NN ile ölçtüğü için
+    Gbest şişik bir değer alıyor, hareket adımı da 2-opt'lu ölçümle onu
+    "iyileştiriyordu". Ölçüler birleşince bu yapay iyileşmeler kayboldu.
+    """
+    d = DEPSO(num_iterations=100, max_stagnation_bound=2, seed=42)
+    d._orders, d._warehouse, d._K = orders, wh, len(orders)
+    d.convergence_history = []
+    d._initialize()
+
+    improvements = 0
+    for it in range(1, 101):
         d._current_iteration = it
+        start = d._prev_gbest
         for p in range(d.num_particles):
             d._move_particle(p)
             d._evaluate_particle(p)
         d.convergence_history.append(d.gbest_distance)
-
-        improved = d.gbest_distance < d._prev_gbest - 1e-12
         d._update_stagnation()
-        if improved:
-            saw_improvement = True
+        d._mutate()
+        d._local_search()
+        if d.gbest_distance < start - 1e-12:
+            improvements += 1
             assert d.s_stag_gbest == 0, (
                 f"iter {it}: Gbest iyileşti ama stagnation {d.s_stag_gbest}"
             )
-
-        d._mutate()
-        d._local_search()
         d._prev_gbest = d.gbest_distance
 
-    assert saw_improvement, "test anlamlı olsun diye en az bir iyileşme gerekli"
+    assert improvements > 0, "test anlamlı olsun diye en az bir iyileşme gerekli"
 
 
 def test_stagnation_increments_when_gbest_flat(orders, wh):
@@ -93,7 +114,7 @@ def test_stagnation_increments_when_gbest_flat(orders, wh):
 def test_insertion_cost_is_marginal_not_total(orders, wh):
     """Maliyet = rota(batch+order) - rota(batch), tamamı değil."""
     algo = RBRS_AE(seed=42)
-    algo._wh, algo._route_cache = wh, {}
+    algo._wh, algo._routes = wh, RouteCache(wh)
 
     batch = Batch(batch_id=0, orders=[orders[0]],
                   total_weight=orders[0].total_weight)
@@ -111,7 +132,7 @@ def test_regret_assignment_respects_capacity_lower_bound(orders, wh):
     Hata varken 50 sipariş için 22 batch açılıyordu (alt sınır 2).
     """
     algo = RBRS_AE(seed=42)
-    algo._wh, algo._route_cache = wh, {}
+    algo._wh, algo._routes = wh, RouteCache(wh)
 
     total_weight = sum(o.total_weight for o in orders)
     lower_bound = -(-total_weight // ITEMS['picker_capacity_WU'])
