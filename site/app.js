@@ -44,7 +44,8 @@ function drawFloor(ctx, geom, T, rackColor) {
   const {s, P} = T;
   ctx.fillStyle = css('--floor'); ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = css('--cross'); ctx.globalAlpha = 0.4;
-  geom.cross.forEach((x, i) => {
+  if (geom.bands) geom.bands.forEach(r => { const [px, py] = P(r[0], r[1] + r[3]); ctx.fillRect(px, py, r[2] * s, r[3] * s); });
+  else geom.cross.forEach((x, i) => {
     const w = i === 0 ? 0.6 : geom.crossW;
     const [px, py] = P(i === 0 ? x - 0.6 : x, geom.h);
     ctx.fillRect(px, py, w * s, geom.h * s);
@@ -113,124 +114,135 @@ function drawIllustrations() {
 // ════════════════════════════════════════════════════════════════════
 // YARIŞ
 // ════════════════════════════════════════════════════════════════════
-const race = {idx: 0, t: 0, playing: !reduceMotion, speed: 3, last: null, lanes: []};
-function prepRace(r) {
-  return r.algorithms.map(a => {
-    let offset = 0;
-    const tours = a.batches.map(b => {
-      const cum = [0];
-      for (let i = 1; i < b.path.length; i++)
-        cum.push(cum[i - 1] + Math.abs(b.path[i][0] - b.path[i - 1][0]) + Math.abs(b.path[i][1] - b.path[i - 1][1]));
-      const stopAt = []; let s = 0;
-      for (let i = 0; i < b.path.length && s < b.stops.length; i++)
-        while (s < b.stops.length && Math.abs(b.path[i][0] - b.stops[s][0]) < 1e-6 && Math.abs(b.path[i][1] - b.stops[s][1]) < 1e-6) { stopAt.push(cum[i]); s++; }
-      while (stopAt.length < b.stops.length) stopAt.push(cum[cum.length - 1]);
-      const t = {b, cum, len: cum[cum.length - 1], start: offset, stopAt};
-      offset += t.len; return t;
+/**
+ * Yarış oynatıcısı. data: {geometry, algorithms:[{name,total,runtime,batches:[{path,stops}]}]}
+ * el: {lanes, clock, play, reset, speed, speedOut}
+ */
+function makeRacePlayer(el) {
+  const st = {t: 0, playing: !reduceMotion, speed: +(el.speed?.value || 3), last: null, lanes: [], geom: null};
+  function prep(r) {
+    return r.algorithms.map(a => {
+      let offset = 0;
+      const tours = a.batches.map(b => {
+        const cum = [0];
+        for (let i = 1; i < b.path.length; i++)
+          cum.push(cum[i - 1] + Math.abs(b.path[i][0] - b.path[i - 1][0]) + Math.abs(b.path[i][1] - b.path[i - 1][1]));
+        const stopAt = []; let s = 0;
+        for (let i = 0; i < b.path.length && s < b.stops.length; i++)
+          while (s < b.stops.length && Math.abs(b.path[i][0] - b.stops[s][0]) < 1e-6 && Math.abs(b.path[i][1] - b.stops[s][1]) < 1e-6) { stopAt.push(cum[i]); s++; }
+        while (stopAt.length < b.stops.length) stopAt.push(cum[cum.length - 1]);
+        const t = {b, cum, len: cum[cum.length - 1], start: offset, stopAt};
+        offset += t.len; return t;
+      });
+      return {a, tours, total: offset};
     });
-    return {a, tours, total: offset};
+  }
+  const maxT = () => Math.max(0, ...st.lanes.map(L => L.p.total));
+  function load(r) {
+    el.lanes.innerHTML = '';
+    st.geom = r.geometry;
+    st.lanes = prep(r).map(p => {
+      const lane = document.createElement('div');
+      lane.className = 'lane'; lane.style.setProperty('--c', `var(${SERIES[p.a.name] || '--ink'})`);
+      lane.innerHTML = `<div class="lane-head"><div class="tag"><span class="dot"></span>${esc(p.a.name)}</div>
+        <div class="stats mono"><div><span>mesafe </span><b data-k="d">0</b> LU</div><div><span>tur </span><b data-k="t">1/${p.tours.length}</b></div><div><span>ürün </span><b data-k="p">0</b></div></div></div>
+        <canvas role="img" aria-label="${esc(p.a.name)} toplayıcısının rotası"></canvas>`;
+      el.lanes.appendChild(lane);
+      return {p, el: lane, canvas: lane.querySelector('canvas'), q: k => lane.querySelector(`[data-k="${k}"]`), done: false};
+    });
+    st.t = 0; st.last = null; st.playing = !reduceMotion;
+    size(); draw(); setPlay();
+  }
+  function size() { st.lanes.forEach(L => { L.T = fitCanvas(L.canvas, st.geom, 300); }); }
+  function pointAt(tr, d) {
+    const {b, cum} = tr;
+    if (d <= 0) return b.path[0];
+    if (d >= tr.len) return b.path[b.path.length - 1];
+    let i = 1; while (cum[i] < d) i++;
+    const f = (d - cum[i - 1]) / Math.max(1e-9, cum[i] - cum[i - 1]);
+    const a = b.path[i - 1], c = b.path[i];
+    return [a[0] + (c[0] - a[0]) * f, a[1] + (c[1] - a[1]) * f];
+  }
+  function drawLane(L) {
+    const ctx = L.canvas.getContext('2d'), T = L.T, P = L.p;
+    const col = css(SERIES[P.a.name] || '--ink'), muted = css('--muted');
+    drawFloor(ctx, st.geom, T);
+    const local = Math.min(st.t, P.total);
+    let cur = P.tours.findIndex(tr => local < tr.start + tr.len);
+    if (cur < 0) cur = P.tours.length - 1;
+    let picked = 0;
+    P.tours.forEach((tr, k) => {
+      const d = local - tr.start, isCur = k === cur;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.strokeStyle = col; ctx.globalAlpha = isCur ? .22 : .1; ctx.lineWidth = Math.max(1, T.s * .18);
+      ctx.beginPath(); tr.b.path.forEach((p, i) => { const [x, y] = T.P(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+      if (d > 0) {
+        ctx.globalAlpha = isCur ? .95 : .35; ctx.lineWidth = Math.max(1.5, T.s * (isCur ? .32 : .2));
+        ctx.beginPath(); const [x0, y0] = T.P(tr.b.path[0][0], tr.b.path[0][1]); ctx.moveTo(x0, y0);
+        for (let i = 1; i < tr.b.path.length && tr.cum[i - 1] < d; i++) {
+          const p = tr.cum[i] <= d ? tr.b.path[i] : pointAt(tr, d); const [x, y] = T.P(p[0], p[1]); ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      if (k <= cur) tr.b.stops.forEach((s, j) => {
+        const got = d >= tr.stopAt[j]; if (got) picked++;
+        const [x, y, w] = stopCell(T, s);
+        if (got) { ctx.fillStyle = isCur ? col : muted; ctx.globalAlpha = isCur ? 1 : .5; ctx.fillRect(x, y, w, w); ctx.globalAlpha = 1; }
+        else if (isCur) { ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, w * .14); ctx.strokeRect(x + 1, y + 1, w - 2, w - 2); }
+      });
+    });
+    const tr = P.tours[cur];
+    if (tr) {
+      const [px, py] = T.P(...pointAt(tr, local - tr.start));
+      ctx.fillStyle = col; ctx.strokeStyle = css('--panel'); ctx.lineWidth = Math.max(2, T.s * .2);
+      ctx.beginPath(); ctx.arc(px, py, Math.max(5, T.s * .8), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    L.q('d').textContent = nf(local); L.q('t').textContent = `${Math.min(cur + 1, P.tours.length)}/${P.tours.length}`; L.q('p').textContent = picked;
+    if (st.t >= P.total && !L.done) {
+      L.done = true;
+      const rt = P.a.runtime_ms != null ? `plan ${nf(P.a.runtime_ms)} ms` : `plan ${nf(P.a.runtime, 1)} sn`;
+      L.el.querySelector('.lane-head').insertAdjacentHTML('beforeend', `<span class="done">bitti · ${nf(P.total)} LU · ${rt}</span>`);
+    }
+  }
+  function draw() {
+    if (!st.geom) return;
+    st.lanes.forEach(drawLane);
+    if (el.clock) el.clock.textContent = `${nf(Math.min(st.t, maxT()))} / ${nf(maxT())} LU`;
+  }
+  function setPlay() { if (el.play) el.play.textContent = st.playing ? 'Durdur' : (st.t >= maxT() ? 'Tekrar' : 'Oynat'); }
+  function frame(ts) {
+    if (st.playing && st.lanes.length) {
+      if (st.last != null) st.t += (ts - st.last) / 1000 * 28 * st.speed;
+      st.last = ts;
+      if (st.t >= maxT()) { st.t = maxT(); st.playing = false; setPlay(); }
+      draw();
+    } else st.last = null;
+    requestAnimationFrame(frame);
+  }
+  el.play?.addEventListener('click', () => {
+    if (st.t >= maxT()) { st.lanes.forEach(L => { L.done = false; L.el.querySelectorAll('.done').forEach(n => n.remove()); }); st.t = 0; }
+    st.playing = !st.playing; setPlay();
   });
+  el.speed?.addEventListener('input', () => { st.speed = +el.speed.value; if (el.speedOut) el.speedOut.textContent = nf(st.speed, st.speed % 1 ? 1 : 0) + '×'; });
+  requestAnimationFrame(frame);
+  onTheme(draw);
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (st.geom) { size(); draw(); } }, 120); });
+  return {load, restart: () => { st.lanes.forEach(L => { L.done = false; L.el.querySelectorAll('.done').forEach(n => n.remove()); }); st.t = 0; st.playing = !reduceMotion; setPlay(); }};
 }
 function raceTitle(r) {
   const d = r.dims;
   return `${dimValueLabel('locations', d.locations)} · ${dimValueLabel('blocks', d.blocks)} · doluluk %${d.fill} · ${nf(d.k)} sipariş`;
 }
-function loadRace() {
-  const r = C.races[race.idx];
-  const host = document.getElementById('lanes');
-  host.innerHTML = '';
-  race.geom = r.geometry;
-  race.lanes = prepRace(r).map(p => {
-    const el = document.createElement('div');
-    el.className = 'lane'; el.style.setProperty('--c', `var(${SERIES[p.a.name]})`);
-    el.innerHTML = `<div class="lane-head"><div class="tag"><span class="dot"></span>${esc(p.a.name)}</div>
-      <div class="stats mono"><div><span>mesafe </span><b data-k="d">0</b> LU</div><div><span>tur </span><b data-k="t">1/${p.tours.length}</b></div><div><span>ürün </span><b data-k="p">0</b></div></div></div>
-      <canvas role="img" aria-label="${esc(p.a.name)} toplayıcısının rotası"></canvas>`;
-    host.appendChild(el);
-    return {p, el, canvas: el.querySelector('canvas'), q: k => el.querySelector(`[data-k="${k}"]`), done: false};
-  });
-  race.t = 0; race.last = null;
-  sizeRace(); drawRace(); setPlay();
-}
-function sizeRace() { race.lanes.forEach(L => { L.T = fitCanvas(L.canvas, race.geom, 300); }); }
-function pointAt(tr, d) {
-  const {b, cum} = tr;
-  if (d <= 0) return b.path[0];
-  if (d >= tr.len) return b.path[b.path.length - 1];
-  let i = 1; while (cum[i] < d) i++;
-  const f = (d - cum[i - 1]) / Math.max(1e-9, cum[i] - cum[i - 1]);
-  const a = b.path[i - 1], c = b.path[i];
-  return [a[0] + (c[0] - a[0]) * f, a[1] + (c[1] - a[1]) * f];
-}
-function raceMax() { return Math.max(...race.lanes.map(L => L.p.total)); }
-function drawLane(L) {
-  const ctx = L.canvas.getContext('2d'), T = L.T, P = L.p;
-  const col = css(SERIES[P.a.name]), muted = css('--muted');
-  drawFloor(ctx, race.geom, T);
-  const local = Math.min(race.t, P.total);
-  let cur = P.tours.findIndex(tr => local < tr.start + tr.len);
-  if (cur < 0) cur = P.tours.length - 1;
-  let picked = 0;
-  P.tours.forEach((tr, k) => {
-    const d = local - tr.start, isCur = k === cur;
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.strokeStyle = col; ctx.globalAlpha = isCur ? .22 : .1; ctx.lineWidth = Math.max(1, T.s * .18);
-    ctx.beginPath(); tr.b.path.forEach((p, i) => { const [x, y] = T.P(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
-    if (d > 0) {
-      ctx.globalAlpha = isCur ? .95 : .35; ctx.lineWidth = Math.max(1.5, T.s * (isCur ? .32 : .2));
-      ctx.beginPath(); const [x0, y0] = T.P(tr.b.path[0][0], tr.b.path[0][1]); ctx.moveTo(x0, y0);
-      for (let i = 1; i < tr.b.path.length && tr.cum[i - 1] < d; i++) {
-        const p = tr.cum[i] <= d ? tr.b.path[i] : pointAt(tr, d); const [x, y] = T.P(p[0], p[1]); ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    if (k <= cur) tr.b.stops.forEach((st, j) => {
-      const got = d >= tr.stopAt[j]; if (got) picked++;
-      const [x, y, s] = stopCell(T, st);
-      if (got) { ctx.fillStyle = isCur ? col : muted; ctx.globalAlpha = isCur ? 1 : .5; ctx.fillRect(x, y, s, s); ctx.globalAlpha = 1; }
-      else if (isCur) { ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, s * .14); ctx.strokeRect(x + 1, y + 1, s - 2, s - 2); }
-    });
-  });
-  const tr = P.tours[cur];
-  const [px, py] = T.P(...pointAt(tr, local - tr.start));
-  ctx.fillStyle = col; ctx.strokeStyle = css('--panel'); ctx.lineWidth = Math.max(2, T.s * .2);
-  ctx.beginPath(); ctx.arc(px, py, Math.max(5, T.s * .8), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  L.q('d').textContent = nf(local); L.q('t').textContent = `${cur + 1}/${P.tours.length}`; L.q('p').textContent = picked;
-  if (race.t >= P.total && !L.done) {
-    L.done = true;
-    L.el.querySelector('.lane-head').insertAdjacentHTML('beforeend', `<span class="done">bitti · ${nf(P.total)} LU · plan ${nf(P.a.runtime, 1)} sn</span>`);
-  }
-}
-function drawRace() {
-  race.lanes.forEach(drawLane);
-  document.getElementById('clock').textContent = `${nf(Math.min(race.t, raceMax()))} / ${nf(raceMax())} LU`;
-}
-function setPlay() { document.getElementById('playBtn').textContent = race.playing ? 'Durdur' : (race.t >= raceMax() ? 'Tekrar' : 'Oynat'); }
-function frame(ts) {
-  if (race.playing && race.lanes.length) {
-    if (race.last != null) race.t += (ts - race.last) / 1000 * 28 * race.speed;
-    race.last = ts;
-    if (race.t >= raceMax()) { race.t = raceMax(); race.playing = false; setPlay(); }
-    drawRace();
-  } else race.last = null;
-  requestAnimationFrame(frame);
-}
 function initRace() {
   const sel = document.getElementById('raceSel');
   if (!C.races.length) { document.getElementById('lanes').innerHTML = '<div class="empty">Yarış verisi yok.</div>'; return; }
+  const player = makeRacePlayer({lanes: document.getElementById('lanes'), clock: document.getElementById('clock'),
+    play: document.getElementById('playBtn'), speed: document.getElementById('speed'), speedOut: document.getElementById('speedOut')});
   C.races.forEach((r, i) => sel.insertAdjacentHTML('beforeend', `<option value="${i}">${esc(raceTitle(r))}</option>`));
-  sel.addEventListener('change', () => { race.idx = +sel.value; race.playing = !reduceMotion; loadRace(); });
-  document.getElementById('playBtn').addEventListener('click', () => {
-    if (race.t >= raceMax()) { race.lanes.forEach(L => { L.done = false; L.el.querySelectorAll('.done').forEach(n => n.remove()); }); race.t = 0; }
-    race.playing = !race.playing; setPlay();
-  });
-  document.getElementById('resetBtn').addEventListener('click', () => { race.playing = !reduceMotion; loadRace(); });
-  const sp = document.getElementById('speed');
-  sp.addEventListener('input', () => { race.speed = +sp.value; document.getElementById('speedOut').textContent = nf(race.speed, race.speed % 1 ? 1 : 0) + '×'; });
-  loadRace();
-  requestAnimationFrame(frame);
-  onTheme(drawRace);
+  sel.addEventListener('change', () => player.load(C.races[+sel.value]));
+  document.getElementById('resetBtn').addEventListener('click', () => player.load(C.races[+sel.value || 0]));
+  player.load(C.races[0]);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -452,7 +464,8 @@ function init() {
   initRace(); initExplorer(); initDynamic(); initReference();
   document.getElementById('stamp').textContent =
     `Veriler ${C.generated_at || '—'} tarihinde, kod sürümü ${C.git_commit || '—'} ile üretildi · ${nf(C.records.length)} deney örneği.`;
-  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { drawIllustrations(); sizeRace(); drawRace(); }, 120); });
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawIllustrations, 120); });
 }
+window.RafArasi = {makeRacePlayer, fitCanvas, drawFloor, stopCell, css, nf, esc, groupedBars, SERIES, onTheme};
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
