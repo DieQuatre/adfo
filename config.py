@@ -201,9 +201,12 @@ GENERATOR = {
 # DİNAMİK STORAGE ASSIGNMENT (Paper Section 5.3, 6.4)
 # ════════════════════════════════════════════════════════════════════════════
 DYNAMIC_STORAGE = {
-    'min_periods_in_wrong_class_o': 2,         # threshold o
-    'min_periods_in_target_class_u': 1,        # threshold u
-    'max_relocation_suggestions': 50,
+    'min_periods_in_wrong_class_o': 2,         # threshold o (Kübler §6.4)
+    'min_periods_in_target_class_u': 1,        # threshold u (Kübler §6.4)
+    'max_relocation_suggestions': 50,          # durdurma: test edilen öneri sayısı
+    # Tahmin ufku U^for: makalede sayı verilmemiş, Şekil 4'teki örnek 4 dönem.
+    'forecast_horizon': 4,
+    'seed': 0,                                 # senaryo 2/3 arasındaki rastgele seçim
 }
 
 
