@@ -9,7 +9,7 @@ Kullanım:
     ...
     python run_batch.py --batch 7   # senaryo 31-35
 
-Her batch: dataset üretimi + 5 instance × 4 algoritma koşumu
+Her batch: data*/ havuzundan örnekleme + 5 instance × 4 algoritma koşumu
 Süre tahmini: ~3-5 dakika/batch (bu ortamda), ~30-60 dk (kendi makinende 40 inst)
 """
 
@@ -17,9 +17,7 @@ import sys
 import json
 import time
 import random
-import math
 import argparse
-import numpy as np
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -69,14 +67,10 @@ PAPER = {
 # SİPARİŞ KAYNAĞI
 # ════════════════════════════════════════════════════════════════════════════
 #
-# BİRİNCİL yol: paper parametreleriyle üretilmiş data*/ dizinlerinden örnekle.
-# YEDEK yol:   generate_orders() ile sentetik üret (yalnızca dizin yoksa).
-#
-# Neden önemli: sentetik üretici talebi ağırlıklı olarak A-sınıfı (depoya
-# yakın) lokasyonlara yığıyor. Aynı senaryoda (50_2_6) SOP baseline'ı gerçek
-# veri setinde 5057 LU iken sentetik üreticide 2160 LU çıkıyor; batching
-# kazancı yapay olarak şişip DEPSO vs SOP oranı paper'ı 5-10 puan aşıyor.
-# Paper karşılaştırması yapılacaksa kaynak data*/ olmalı.
+# Tek kaynak: Kübler parametreleriyle üretilmiş data*/ dizinleri.
+# Dizin yoksa ya da havuz k siparişi karşılamıyorsa koşum AÇIK HATA verir.
+# (Eskiden sessizce sentetik bir üreticiye düşülüyordu; o üretici talebi
+# A-sınıfına yığdığı için SOP tabanını yapay düşürüp kazancı şişiriyordu.)
 
 DATA_DIR_MAP = {
     (2,  2): 'data_2_2',   (2,  6): 'data',      (2, 10): 'data_2_10',
@@ -114,13 +108,15 @@ def sample_instances(n_maxol: int, a_maxol: int, k: int,
     """
     Havuzdan k siparişlik n_instances örnek çek.
 
-    Tohum formülü run_paper_scenarios.py ile aynı (inst_id*7 + 42 + k), böylece
-    iki betiğin sonuçları karşılaştırılabilir kalır. Tohumun k'ya bağlı olması,
-    farklı k değerlerinin farklı alt küme almasını garantiler.
+    Tohum formülü: inst_id*7 + 42 + k. Tohumun k'ya bağlı olması, farklı k
+    değerlerinin farklı alt küme almasını garantiler.
     """
     pool = load_pool(n_maxol, a_maxol)
     if len(pool) < k:
-        return []
+        raise RuntimeError(
+            f"{DATA_DIR_MAP[(n_maxol, a_maxol)]}/ havuzunda {len(pool)} sipariş var, "
+            f"k={k} isteniyor. Veri dizini eksik ya da yetersiz."
+        )
 
     out = []
     for inst_id in range(n_instances):
@@ -129,105 +125,6 @@ def sample_instances(n_maxol: int, a_maxol: int, k: int,
         random.Random(seed).shuffle(shuffled)
         out.append((shuffled[:k], seed))
     return out
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# YEDEK DATASET ÜRETİCİ (yalnızca data*/ dizini yoksa kullanılır)
-# ════════════════════════════════════════════════════════════════════════════
-
-def generate_orders(n_maxol: int, a_maxol: int,
-                    n_instances: int = 5,
-                    seed: int = 42,
-                    target_orders: int = 500) -> list:
-    """
-    (n_maxol, a_maxol) kombinasyonu için n_instances instance üret.
-
-    target_orders: her instance'ta üretilecek sipariş sayısı. Bu parametre
-    şart: item havuzu (n_maxol, a_maxol)'a göre yalnızca 19-110 sipariş
-    besleyebiliyordu, dolayısıyla k=50/100/150/200 senaryoları aynı kısa
-    listeyi alıp BİREBİR AYNI deneyi 4 kez raporluyordu. Havuz yetmezse
-    aşağıda talep dağılımı korunarak çoğaltılır.
-
-    Döndürür: [(orders_list, seed), ...] listesi
-    """
-    base_loader = DataLoader(Path(__file__).parent / 'data')
-    items_data  = base_loader.load_items()
-    item_weights  = np.array([it.weight_WU for it in items_data])
-    item_locations= np.array([it.initial_location for it in items_data])
-    num_items = len(item_weights)
-
-    # Senaryo 1, periyot 1, alt-periyot 1 talebini kullan
-    demand = base_loader.load_scenario_demand(1)
-    item_ol = demand[:, 12]  # test periyodu 1
-
-    picker_cap = 100.0
-
-    all_instances = []
-    for inst_id in range(n_instances):
-        inst_seed = seed + inst_id * 7
-        rng = np.random.default_rng(inst_seed)
-        local_rng = random.Random(inst_seed)
-
-        # Item havuzu oluştur (talep ile orantılı)
-        item_pool = []
-        for m in range(num_items):
-            cnt = int(item_ol[m]) // 20  # alt-periyot payı
-            item_pool.extend([m] * max(cnt, 0))
-        rng.shuffle(item_pool)
-
-        # Havuz hedeflenen sipariş sayısını besleyemiyorsa, AYNI talep
-        # dağılımını koruyarak çoğalt. (Aksi halde k=200 istenirken havuz
-        # ~30 siparişte tükeniyor ve k=50/100/150/200 aynı listeyi alıyor.)
-        if item_pool:
-            needed = target_orders * n_maxol
-            while len(item_pool) < needed:
-                extra = item_pool[:]
-                rng.shuffle(extra)
-                item_pool.extend(extra)
-
-        # Siparişler üret
-        from core.data_loader import Order, OrderLine
-        orders = []
-        pool_copy = list(item_pool[:])
-
-        while len(orders) < target_orders and pool_copy:
-            n_ol = local_rng.randint(1, n_maxol)
-            orderlines = []
-            used = set()
-            total_w = 0.0
-
-            for _ in range(n_ol * 3):
-                if len(orderlines) >= n_ol or not pool_copy:
-                    break
-                m = pool_copy[0]
-                if m not in used:
-                    qty    = local_rng.randint(1, a_maxol)
-                    weight = float(item_weights[m]) * qty
-                    if total_w + weight <= picker_cap:
-                        pool_copy.pop(0)
-                        used.add(m)
-                        ol = OrderLine(item=int(m), quantity=qty,
-                                      location=int(item_locations[m]),
-                                      weight=round(weight, 3))
-                        orderlines.append(ol)
-                        total_w += weight
-                    else:
-                        break
-                else:
-                    pool_copy.pop(0)
-
-            if orderlines:
-                o = Order(order_id=len(orders),
-                          num_orderlines=len(orderlines),
-                          total_weight=round(total_w, 3),
-                          orderlines=orderlines)
-                orders.append(o)
-
-        # Shuffle
-        local_rng.shuffle(orders)
-        all_instances.append((orders, inst_seed))
-
-    return all_instances
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -247,21 +144,10 @@ def run_one_scenario(scenario: dict, n_instances: int,
     print(f"\n  [{name}]  K={k}, N_maxol={n}, A_maxol={a}  "
           f"(paper DEPSO vs SOP: {paper}%)")
 
-    # Sipariş kaynağı: önce paper veri seti, olmazsa sentetik yedek.
+    # Sipariş kaynağı: yalnızca Kübler veri seti (yedek yol yok).
     instances = sample_instances(n, a, k, n_instances)
     source = 'data_pool'
-    if not instances:
-        source = 'synthetic'
-        print(f"    ⚠ {DATA_DIR_MAP[(n, a)]}/ havuzu yetersiz — sentetik "
-              f"üreticiye düşülüyor. Paper karşılaştırması güvenilmez olur; "
-              f"önce `python generate_all_scenarios.py` çalıştırın.")
-        # k'yı MUTLAKA geçir, yoksa farklı k'lar aynı listeyi alır.
-        instances = generate_orders(n, a, n_instances, target_orders=k)
 
-    short = [len(o) for o, _ in instances if len(o) < k]
-    if short:
-        print(f"    ⚠ UYARI: {len(short)} instance k={k}'ya ulaşamadı "
-              f"(üretilen: {short}). Sonuçlar k ile etiketlenmemeli.")
     print(f"    kaynak: {source}, {len(instances)} instance")
 
     results = {alg: {'td': [], 'rt': []}
