@@ -20,3 +20,4 @@ env/
 
 # Hızlı deneme çıktısı
 results/only.json
+results/checkpoints/

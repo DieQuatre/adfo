@@ -8,6 +8,9 @@ Kullanım:
     python run_batch.py --batch all --jobs 8   # 35 senaryo, 8 paralel işlem
     python run_batch.py --summary              # kayıtlı sonuçların özeti
 
+Yarıda kesilen koşum aynı komutla devam eder (results/checkpoints/).
+--fresh her şeyi baştan koşar.
+
 Her senaryo: data*/ havuzundan k siparişlik --n örnek; her örnekte tüm
 algoritmalar AYNI siparişlerle koşar. Algoritma ayarları config.py'den gelir;
 yalnızca DEPSO iterasyonu komut satırından değiştirilebilir (varsayılan: makale, 500).
@@ -206,26 +209,54 @@ def _aggregate(scenario: dict, inst_results: list[dict]) -> dict:
             'order_source': 'data_pool', 'stats': stats}
 
 
+CHECKPOINT_DIR = Path("results") / "checkpoints"
+
+
+def _ckpt_path(task: tuple) -> Path:
+    name, k, n, a, inst_id, depso_iter = task
+    return CHECKPOINT_DIR / f"{name}__i{inst_id}__d{depso_iter}.json"
+
+
 def run_scenarios(scenarios: list[dict], n_instances: int, depso_iter: int,
-                  jobs: int = 1) -> list[dict]:
+                  jobs: int = 1, resume: bool = True) -> list[dict]:
+    """
+    Her (senaryo, örnek) bittiği anda results/checkpoints/ altına yazılır.
+    Koşum yarıda kesilirse aynı komut tekrar çalıştırıldığında bitmiş
+    örnekler atlanır (resume=True). Checkpoint, DEPSO iterasyonunu da
+    anahtarında taşır; farklı ayarla alınmış sonuç karışmaz.
+    """
     tasks = [(s['name'], s['k'], s['n'], s['a'], i, depso_iter)
              for s in scenarios for i in range(n_instances)]
     done: dict[str, list] = {s['name']: [] for s in scenarios}
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    todo = []
+    for t in tasks:
+        path = _ckpt_path(t)
+        if resume and path.exists():
+            done[t[0]].append(json.loads(path.read_text(encoding='utf-8')))
+        else:
+            todo.append(t)
+    skipped = len(tasks) - len(todo)
+    if skipped:
+        print(f"  {skipped} örnek daha önce bitmiş (checkpoint), atlanıyor.")
     t0 = time.perf_counter()
 
     def _report(r):
+        task = (r['scenario'], None, None, None, r['inst_id'], depso_iter)
+        _ckpt_path(task).write_text(json.dumps(r), encoding='utf-8')
         done[r['scenario']].append(r)
         parts = ' '.join(f"{alg}={r[alg]['td']:.0f}" for alg in ALGORITHMS)
         n_done = sum(len(v) for v in done.values())
         print(f"  [{n_done}/{len(tasks)} {time.perf_counter() - t0:6.0f}s] "
               f"{r['scenario']} #{r['inst_id'] + 1}: {parts}", flush=True)
 
-    if jobs > 1:
+    if jobs > 1 and todo:
         with Pool(jobs) as pool:
-            for r in pool.imap_unordered(_run_instance, tasks):
+            for r in pool.imap_unordered(_run_instance, todo):
                 _report(r)
     else:
-        for t in tasks:
+        for t in todo:
             _report(_run_instance(t))
 
     return [_aggregate(s, done[s['name']]) for s in scenarios]
@@ -298,6 +329,8 @@ if __name__ == "__main__":
     parser.add_argument("--only", type=str, default=None,
                         help="Yalnızca bu senaryolar, örn. 50_2_6,100_6_6 "
                              "(sonuç results/only.json'a yazılır, batch dosyaları değişmez)")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Checkpoint'leri yok say, her örneği baştan koş")
     parser.add_argument("--summary", action="store_true",
                         help="Tüm batch sonuçlarını özetler")
     args = parser.parse_args()
@@ -309,7 +342,8 @@ if __name__ == "__main__":
         if missing:
             print(f"Bilinmeyen senaryo: {missing}")
             sys.exit(1)
-        res = run_scenarios([by[w] for w in wanted], args.n, args.depso_iter, args.jobs)
+        res = run_scenarios([by[w] for w in wanted], args.n, args.depso_iter, args.jobs,
+                            resume=not args.fresh)
         Path("results").mkdir(exist_ok=True)
         with open(Path("results") / "only.json", 'w', encoding='utf-8') as f:
             json.dump({'n_instances': args.n, 'depso_iter': args.depso_iter,
@@ -345,7 +379,8 @@ if __name__ == "__main__":
     print("=" * 60)
 
     t0 = time.perf_counter()
-    results = run_scenarios(scenarios, args.n, args.depso_iter, args.jobs)
+    results = run_scenarios(scenarios, args.n, args.depso_iter, args.jobs,
+                            resume=not args.fresh)
     by_name = {r['scenario']: r for r in results}
 
     meta = {
