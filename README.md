@@ -171,7 +171,9 @@ python site_data.py            # results/ altındaki tüm deneyleri site/data/ca
 python site_data.py --races    # yarış animasyonlarının rotalarını da yeniden hesaplar
 ```
 
-Yerelde görmek için `site/index.html` dosyasını tarayıcıda açmak yeterli. `site/` master'a
+Yerelde görmek için `site/index.html` dosyasını tarayıcıda açmak yeterli.
+"Kendin dene" bölümü (`site/solver.js`, `site/playground.js`) algoritmaların hafifletilmiş bir
+JavaScript sürümüyle ziyaretçinin tarayıcısında çalışır; resmî sonuçlar Python kodundan gelir. `site/` master'a
 gönderildiğinde GitHub Pages ile yayınlanır (`.github/workflows/pages.yml`; ilk seferde
 Settings → Pages → Source: GitHub Actions).
 

@@ -138,10 +138,64 @@
 
   <section class="wrap" id="kendin-dene">
     <p class="eyebrow">Kendin dene</p>
-    <h2>Kendi deponu kur</h2>
-    <div class="soon">
-      <strong>Bir sonraki sürümde.</strong>
-      <span class="muted">Kapının yerini, koridor ve blok sayısını, sipariş sayısını seçip ya da raflara tıklayıp kendi siparişini oluşturup üç algoritmayı tarayıcıda yarıştırabileceksin. Bu bölüm tarayıcı sürümüyle çalışacak; yukarıdaki deney sonuçları ise araştırmanın resmî koduyla üretiliyor.</span>
+    <h2>Kendi deponu kur, algoritmaları yarıştır</h2>
+    <p class="muted">Depoyu ve siparişleri sen belirle; üç algoritma planı senin tarayıcında hesaplasın. Bu bölüm algoritmaların tarayıcı sürümüyle ve hafifletilmiş ayarlarla çalışır. Yukarıdaki deney sonuçları ise araştırmanın resmî koduyla üretildi.</p>
+    <div class="pg">
+      <div class="pg-form">
+        <fieldset>
+          <legend>Depo</legend>
+          <label class="field" for="pgAisles">Koridor sayısı <output id="pgAislesOut" class="mono">8</output><input id="pgAisles" type="range" min="4" max="16" value="8"></label>
+          <label class="field" for="pgRacks">Koridor uzunluğu (raf) <output id="pgRacksOut" class="mono">14</output><input id="pgRacks" type="range" min="8" max="30" value="14"></label>
+          <div class="field"><span>Koridor yapısı</span>
+            <div class="seg" id="pgBlocks" role="group" aria-label="Koridor yapısı">
+              <button type="button" data-v="1" aria-pressed="false">Geçişsiz</button>
+              <button type="button" data-v="2" aria-pressed="true">Tek geçişli</button>
+              <button type="button" data-v="3" aria-pressed="false">İki geçişli</button>
+            </div></div>
+          <label class="field" for="pgDoor">Kapının yeri
+            <select id="pgDoor">
+              <option value="alt-sag">Alt sağ köşe</option>
+              <option value="alt-orta">Alt kenar, ortada</option>
+              <option value="alt-sol">Alt sol köşe</option>
+              <option value="sag-orta">Sağ kenar, ortada</option>
+            </select></label>
+        </fieldset>
+        <fieldset>
+          <legend>Siparişler</legend>
+          <div class="field"><span>Nasıl oluşturulsun?</span>
+            <div class="seg" id="pgMode" role="group" aria-label="Sipariş kaynağı">
+              <button type="button" data-v="random" aria-pressed="true">Rastgele</button>
+              <button type="button" data-v="manual" aria-pressed="false">Raflardan kendim seçeyim</button>
+            </div></div>
+          <div id="pgRandomBox" class="pg-sub">
+            <label class="field" for="pgOrders">Sipariş sayısı <output id="pgOrdersOut" class="mono">30</output><input id="pgOrders" type="range" min="10" max="60" value="30"></label>
+            <label class="field" for="pgLines">Sipariş başına en fazla ürün <output id="pgLinesOut" class="mono">3</output><input id="pgLines" type="range" min="1" max="4" value="3"></label>
+            <label class="check" for="pgPopular"><input id="pgPopular" type="checkbox" checked> Çok satanlar kapıya yakın dursun</label>
+            <button class="btn ghost" id="pgNew" type="button">Yeni siparişler üret</button>
+          </div>
+          <div id="pgManualBox" class="pg-sub" hidden>
+            <p class="small muted" style="margin:0">Haritada raflara tıkla: seçtiğin ürünler bir sipariş olur. "Siparişi ekle" ile kaydet, yenisine geç.</p>
+            <div class="pg-row"><button class="btn ghost" id="pgAdd" type="button">Siparişi ekle</button><button class="btn ghost" id="pgClear" type="button">Hepsini sil</button></div>
+          </div>
+          <label class="field" for="pgCap">Araba kapasitesi (ağırlık birimi) <output id="pgCapOut" class="mono">40</output><input id="pgCap" type="range" min="15" max="100" step="5" value="40"></label>
+        </fieldset>
+        <button class="btn" id="pgRun" type="button">Çöz ve yarıştır</button>
+        <div class="pg-progress" id="pgProgress" hidden></div>
+      </div>
+      <div class="pg-map">
+        <canvas id="pgCanvas" role="img" aria-label="Kurduğun depo ve siparişlerdeki ürünler"></canvas>
+        <p class="small muted" id="pgInfo"></p>
+      </div>
+    </div>
+    <div id="pgResult" hidden>
+      <div class="controls" role="group" aria-label="Yarış ayarları">
+        <button class="btn" id="pgPlay" type="button">Durdur</button>
+        <button class="btn ghost" id="pgReplay" type="button">Baştan</button>
+        <label class="inline speed" for="pgSpeed">Hız <input id="pgSpeed" type="range" min="0.5" max="8" step="0.5" value="3"><output id="pgSpeedOut" class="mono">3×</output></label>
+        <div class="clock mono" id="pgClock"></div>
+      </div>
+      <p class="headline" id="pgHeadline"></p>
+      <div class="lanes" id="pgLanes"></div>
     </div>
   </section>
 </main>
@@ -155,5 +209,7 @@
 <!--/BODY-->
 <script src="data/catalog.js"></script>
 <script src="app.js"></script>
+<script src="solver.js"></script>
+<script src="playground.js"></script>
 </body>
 </html>
