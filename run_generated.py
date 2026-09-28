@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import config
 from config import GENERATOR as GEN
-from core.generator import InstanceSpec, generate, grid
+from core.generator import InstanceSpec, generate
 from run_batch import ALGORITHMS, solve_all, _git_commit
 
 OUT = Path("results") / "generated"
@@ -114,8 +114,10 @@ def main():
         print(summarise(rows) if rows else "Henüz sonuç yok.")
         return
 
-    specs = [s for s in grid(args.seed, args.dynamics)
-             if s.size in args.sizes and s.blocks in args.blocks and s.fill in args.fills]
+    # Izgara yalnızca varsayılan; komut satırında verilen her değer koşulur
+    # (ör. --sizes 30000 ya da --fills 0.4, config'teki ızgarada olmasa bile).
+    specs = [InstanceSpec(size, b, f, args.dynamics, args.seed)
+             for size in args.sizes for b in args.blocks for f in args.fills]
     # Aynı depoyu kullanan işler art arda gelsin (işçi önbelleği için)
     tasks = [(s, i, k, args.depso_iter) for s in specs for k in args.k for i in range(args.sets)]
     todo = [t for t in tasks if not _ckpt(*t).exists()]
