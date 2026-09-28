@@ -1,0 +1,324 @@
+{
+ "problem": "S5000_B2_F70_yuksek_s0",
+ "algorithm": "FIRSTFIT",
+ "subperiods_used": 20,
+ "depso_iter": 500,
+ "config": {
+  "min_periods_in_wrong_class_o": 2,
+  "min_periods_in_target_class_u": 1,
+  "max_relocation_suggestions": 50,
+  "forecast_horizon": 4,
+  "seed": 0
+ },
+ "summary": {
+  "reduction_pct": 0.56,
+  "effort_pct": 1.11,
+  "subperiods_used": 20,
+  "net_pct": -0.55
+ },
+ "periods": [
+  {
+   "period": 1,
+   "td_static": 51934.0,
+   "td_dynamic": 51934.0,
+   "reduction_pct": 0.0,
+   "effort_LU": 0.0,
+   "effort_pct": 0.0,
+   "candidates": 0,
+   "tested": 0,
+   "accepted": 0,
+   "relocated_items": 0,
+   "moves": [],
+   "scenarios": [],
+   "net_pct": 0.0
+  },
+  {
+   "period": 2,
+   "td_static": 49152.0,
+   "td_dynamic": 49152.0,
+   "reduction_pct": 0.0,
+   "effort_LU": 1055.0,
+   "effort_pct": 2.146,
+   "candidates": 253,
+   "tested": 50,
+   "accepted": 4,
+   "relocated_items": 4,
+   "moves": [
+    [
+     377,
+     1619,
+     236,
+     "B",
+     "A"
+    ],
+    [
+     2084,
+     2350,
+     479,
+     "B",
+     "A"
+    ],
+    [
+     1592,
+     1151,
+     232,
+     "B",
+     "A"
+    ],
+    [
+     3173,
+     3338,
+     233,
+     "B",
+     "A"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "net_pct": -2.146
+  },
+  {
+   "period": 3,
+   "td_static": 51642.0,
+   "td_dynamic": 51513.0,
+   "reduction_pct": 0.25,
+   "effort_LU": 1085.0,
+   "effort_pct": 2.101,
+   "candidates": 253,
+   "tested": 50,
+   "accepted": 4,
+   "relocated_items": 4,
+   "moves": [
+    [
+     2550,
+     144,
+     475,
+     "B",
+     "A"
+    ],
+    [
+     627,
+     152,
+     471,
+     "B",
+     "A"
+    ],
+    [
+     2817,
+     2605,
+     224,
+     "B",
+     "A"
+    ],
+    [
+     3158,
+     4636,
+     189,
+     "C",
+     "B"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "net_pct": -1.851
+  },
+  {
+   "period": 4,
+   "td_static": 48591.0,
+   "td_dynamic": 48399.0,
+   "reduction_pct": 0.395,
+   "effort_LU": 295.0,
+   "effort_pct": 0.607,
+   "candidates": 230,
+   "tested": 48,
+   "accepted": 1,
+   "relocated_items": 1,
+   "moves": [
+    [
+     2829,
+     2676,
+     429,
+     "C",
+     "B"
+    ]
+   ],
+   "scenarios": [
+    1
+   ],
+   "net_pct": -0.212
+  },
+  {
+   "period": 5,
+   "td_static": 51052.0,
+   "td_dynamic": 50828.0,
+   "reduction_pct": 0.439,
+   "effort_LU": 554.0,
+   "effort_pct": 1.085,
+   "candidates": 243,
+   "tested": 50,
+   "accepted": 2,
+   "relocated_items": 2,
+   "moves": [
+    [
+     781,
+     4549,
+     716,
+     "C",
+     "A"
+    ],
+    [
+     3169,
+     2710,
+     680,
+     "C",
+     "B"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1
+   ],
+   "net_pct": -0.646
+  },
+  {
+   "period": 6,
+   "td_static": 52281.0,
+   "td_dynamic": 51927.0,
+   "reduction_pct": 0.677,
+   "effort_LU": 257.0,
+   "effort_pct": 0.492,
+   "candidates": 243,
+   "tested": 50,
+   "accepted": 1,
+   "relocated_items": 1,
+   "moves": [
+    [
+     1586,
+     1387,
+     959,
+     "B",
+     "A"
+    ]
+   ],
+   "scenarios": [
+    1
+   ],
+   "net_pct": 0.185
+  },
+  {
+   "period": 7,
+   "td_static": 52977.0,
+   "td_dynamic": 52584.0,
+   "reduction_pct": 0.742,
+   "effort_LU": 549.0,
+   "effort_pct": 1.036,
+   "candidates": 256,
+   "tested": 50,
+   "accepted": 2,
+   "relocated_items": 2,
+   "moves": [
+    [
+     3062,
+     1813,
+     222,
+     "C",
+     "A"
+    ],
+    [
+     2648,
+     1856,
+     460,
+     "B",
+     "A"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1
+   ],
+   "net_pct": -0.294
+  },
+  {
+   "period": 8,
+   "td_static": 55199.0,
+   "td_dynamic": 54504.0,
+   "reduction_pct": 1.259,
+   "effort_LU": 541.0,
+   "effort_pct": 0.98,
+   "candidates": 261,
+   "tested": 50,
+   "accepted": 2,
+   "relocated_items": 2,
+   "moves": [
+    [
+     94,
+     4517,
+     1174,
+     "C",
+     "B"
+    ],
+    [
+     1160,
+     3359,
+     461,
+     "B",
+     "A"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1
+   ],
+   "net_pct": 0.279
+  },
+  {
+   "period": 9,
+   "td_static": 53152.0,
+   "td_dynamic": 52540.0,
+   "reduction_pct": 1.151,
+   "effort_LU": 857.0,
+   "effort_pct": 1.612,
+   "candidates": 262,
+   "tested": 50,
+   "accepted": 3,
+   "relocated_items": 3,
+   "moves": [
+    [
+     925,
+     4131,
+     1665,
+     "C",
+     "B"
+    ],
+    [
+     1270,
+     2200,
+     1905,
+     "C",
+     "B"
+    ],
+    [
+     1100,
+     2818,
+     1906,
+     "C",
+     "B"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1,
+    1
+   ],
+   "net_pct": -0.461
+  }
+ ]
+}
