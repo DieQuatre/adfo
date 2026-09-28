@@ -126,6 +126,38 @@ def check_independence(rows: list) -> list[str]:
     return dupes
 
 
+def algorithm_comparison(rows: list) -> list[str]:
+    """
+    Üç algoritmanın karşılaştırması: senaryo bazında en kısa ortalama mesafe
+    kimde, ortalama mesafe ve süre (sipariş sayısına göre).
+    """
+    algs = [a for a in ('DEPSO', 'RBRS-AE', 'ALNS')
+            if all(a in r['stats'] for r in rows)]
+    if len(algs) < 2:
+        return []
+    out = ["## Algoritma karşılaştırması", "",
+           "Senaryo bazında ortalama toplam mesafesi en kısa olan algoritma:", ""]
+    wins = {a: 0 for a in algs}
+    for r in rows:
+        best = min(algs, key=lambda a: r['stats'][a]['mean_td'])
+        wins[best] += 1
+    out.append("| " + " | ".join(algs) + " |")
+    out.append("|" + "---|" * len(algs))
+    out.append("| " + " | ".join(f"{wins[a]}/{len(rows)}" for a in algs) + " |")
+    out += ["", "Sipariş sayısına göre ortalama mesafe (LU) ve süre (s):", ""]
+    out.append("| k | " + " | ".join(f"{a} LU | {a} s" for a in algs) + " |")
+    out.append("|---|" + "---|---|" * len(algs))
+    for k in sorted({r['k'] for r in rows}):
+        sub = [r for r in rows if r['k'] == k]
+        cells = []
+        for a in algs:
+            cells.append(f"{_mean([r['stats'][a]['mean_td'] for r in sub]):.0f}")
+            cells.append(f"{_mean([r['stats'][a]['mean_rt'] for r in sub]):.1f}")
+        out.append(f"| {k} | " + " | ".join(cells) + " |")
+    out.append("")
+    return out
+
+
 def write_report(rows: list, meta: dict, dupes: list, warnings: list) -> str:
     n_inst = meta.get("n_instances", "?")
     d_iter = meta.get("depso_iter", "?")
@@ -150,8 +182,8 @@ def write_report(rows: list, meta: dict, dupes: list, warnings: list) -> str:
                      "tabloyu yayımlamayın.")
         lines.append("")
     lines.append("| Senaryo | DEPSO vs SOP | Paper | Fark | RBRS-AE vs SOP "
-                 "| DEPSO vs FCFS | Durum |")
-    lines.append("|---|---|---|---|---|---|---|")
+                 "| ALNS vs SOP | DEPSO vs FCFS | Durum |")
+    lines.append("|---|---|---|---|---|---|---|---|")
 
     devs, ok_count = [], 0
     for r in sorted(rows, key=lambda x: (x['k'], x['n_maxol'], x['a_maxol'])):
@@ -162,12 +194,14 @@ def write_report(rows: list, meta: dict, dupes: list, warnings: list) -> str:
         d_sop = r['stats']['DEPSO']['vs_sop_mean']
         d_fcfs = r['stats']['DEPSO']['vs_fcfs_mean']
         rb_sop = r['stats']['RBRS-AE']['vs_sop_mean']
+        al = r['stats'].get('ALNS')
+        al_sop = f"{al['vs_sop_mean']:.2f}%" if al else "—"
         diff = d_sop - paper
         devs.append(abs(diff))
         ok = abs(diff) < TOLERANCE_POINTS
         ok_count += ok
         lines.append(f"| {name} | {d_sop:.2f}% | {paper:.2f}% | {diff:+.2f}% "
-                     f"| {rb_sop:.2f}% | {d_fcfs:.2f}% | {'✅' if ok else '⚠️'} |")
+                     f"| {rb_sop:.2f}% | {al_sop} | {d_fcfs:.2f}% | {'✅' if ok else '⚠️'} |")
 
     signed = _mean([r['stats']['DEPSO']['vs_sop_mean'] - PAPER[r['scenario']]
                     for r in rows if r['scenario'] in PAPER])
@@ -181,6 +215,8 @@ def write_report(rows: list, meta: dict, dupes: list, warnings: list) -> str:
         f"**±{TOLERANCE_POINTS:.0f} puan içinde: {ok_count}/{len(devs)}**",
         "",
     ]
+
+    lines += algorithm_comparison(rows)
 
     if dupes:
         lines += ["> ⚠️ **BAĞIMSIZLIK UYARISI** — aşağıdaki senaryolar birebir "

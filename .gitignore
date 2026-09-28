@@ -17,3 +17,6 @@ env/
 # Editör
 .idea/
 .vscode/
+
+# Hızlı deneme çıktısı
+results/only.json
