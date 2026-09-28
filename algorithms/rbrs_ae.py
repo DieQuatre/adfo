@@ -438,17 +438,6 @@ class RBRS_AE(BatchingRoutingAlgorithm):
     # YARDIMCILAR
     # ══════════════════════════════════════════════════════════════
 
-    def _savings_start(self, orders: list[Order],
-                       rng: random.Random = None) -> list[Batch]:
-        """Clarke-Wright savings ile başlangıç batch'leri."""
-        from algorithms.batching.savings import savings_batching
-        # savings_batching deterministik, rng burada order sıralaması için
-        if rng is not None:
-            shuffled = orders[:]
-            rng.shuffle(shuffled)
-            return savings_batching(shuffled, self._wh, capacity=self.capacity)
-        return savings_batching(orders, self._wh, capacity=self.capacity)
-
     def _final_shift(self, batches: list[Batch]) -> tuple[list[Batch], bool]:
         """
         Final local improvement — tüm order/batch kombinasyonlarını tara,

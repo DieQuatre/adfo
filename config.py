@@ -109,15 +109,9 @@ DEPSO = {
 # RBRS-AE PARAMETRELERİ
 # ════════════════════════════════════════════════════════════════════════════
 RBRS_AE = {
-    # Step 1: Priority score
-    'priority_metric': 'combined',   # 0.5*AvgDist + 0.3*Var + 0.2*Weight
-
-    # Regret hesaplama
-    'regret_window': 2,
-
-    # Adaptive elimination
-    'inefficiency_metric': 'distance_per_orderline',
-    'elimination_pct': 0.20,
+    # Priority(o) = 0.5*AvgDist + 0.3*Var + 0.2*Weight ve
+    # I(b) = 0.7*(dist/orderCount) + 0.3*(1-utilization) ağırlıkları,
+    # adaptif eleme oranı (%20 → %10) şu an algorithms/rbrs_ae.py içinde sabit.
 
     # Local search (yüksek değerler — DEPSO'yu geçmek için)
     'shift_attempts': 40,

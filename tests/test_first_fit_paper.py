@@ -79,17 +79,10 @@ def test_paper_first_fit():
     for bid, ords in expected.items():
         print(f"  Batch {bid + 1}: orders={ords}")
 
-    # Doğrulama
+    # Doğrulama. Eskiden True/False döndürüyordu; pytest dönüş değerine
+    # bakmadığı için sonuç uyuşmasa bile test GEÇİYORDU.
     actual = {b.batch_id: [o.order_id for o in b.orders] for b in batches}
-    if actual == expected:
-        print("\n✓ first-fit paper örneğiyle UYUMLU")
-        return True
-    else:
-        print("\n✗ first-fit paper örneğiyle UYUŞMUYOR")
-        print(f"  Beklenen: {expected}")
-        print(f"  Bizim:    {actual}")
-        return False
-
+    assert actual == expected, f"Beklenen: {expected}\nBizim:    {actual}"
 
 if __name__ == "__main__":
     test_paper_first_fit()

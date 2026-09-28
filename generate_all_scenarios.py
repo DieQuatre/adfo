@@ -243,5 +243,5 @@ if __name__ == "__main__":
     print(f"\nToplam süre: {elapsed:.1f} dakika")
     print(f"Üretilen dizinler: {[f'data_{n}_{a}' for n,a in combos_to_generate]}")
     print()
-    print("Şimdi run_paper_scenarios.py ile 35 senaryoyu koşturabilirsiniz:")
-    print("  python run_paper_scenarios.py --n 40")
+    print("Şimdi run_batch.py ile 35 senaryoyu koşturabilirsiniz:")
+    print("  python run_batch.py --batch 1   # ... --batch 7")
