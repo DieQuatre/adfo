@@ -16,8 +16,9 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu (DEPSO) + RBRS-AE + ALNS.
 | Modül | Durum |
 |---|---|
 | `config.py` | ✅ |
-| `core/warehouse.py` | ✅ Depo + numpy mesafe matrisi |
+| `core/warehouse.py` | ✅ Parametrik depo düzeni + numpy mesafe matrisi |
 | `core/data_loader.py` | ✅ |
+| `core/generator.py` | ✅ Parametrik problem üreticisi — `docs/URETICI.md` |
 | `core/forecasting.py` | ✅ Holt-Winters (α=0.19, β=0.053, γ=0.10) |
 | `algorithms/base.py` | ✅ Interface |
 | `algorithms/routing/*` | ✅ NN, 2-opt, **gerçek S-Shape traversal** |
@@ -30,7 +31,7 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu (DEPSO) + RBRS-AE + ALNS.
 | `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
 | `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
 | `run_batch.py` | ✅ 35 senaryo koşucu (5 algoritma, paralel) |
-| `tests/` | ✅ **110 test**, tamamı geçiyor |
+| `tests/` | ✅ **149 test**, tamamı geçiyor |
 
 ---
 
@@ -136,13 +137,26 @@ yeniden koşup sonuçların üzerine yazıyordu.
 
 ---
 
+## Parametrik ızgara deneyi
+
+```bash
+python generate_instances.py                 # 36 depoyu üret, instances/index.csv özet
+python run_generated.py --jobs 8             # 36 depo × 10 sipariş seti × 5 algoritma
+python run_generated.py --sizes 5000 --sets 2 --k 50   # küçük deneme
+python run_generated.py --summary            # results/generated/summary.md
+```
+
+Ayrıntılar ve grup kararı bekleyen değerler: `docs/URETICI.md`.
+
+---
+
 ## Testler
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-**110 test, tamamı geçiyor.**
+**149 test, tamamı geçiyor.**
 
 | Dosya | Kapsam |
 |---|---|
@@ -150,6 +164,8 @@ python -m pytest tests/ -v
 | `test_solution_integrity.py` | Her algoritmanın çözümü tutarlı mı (sipariş, kapasite, rota, mesafe) |
 | `test_alns.py` | ALNS denklemleri (6), (8), (11), (13), (16) ve operatörler |
 | `test_routing_fast_path.py` | Hızlı rota yolu eski yolla birebir aynı |
+| `test_parametric_warehouse.py` | 1/2/3 bloklu depo geometrisi, algoritmalar Kübler dışı düzende |
+| `test_generator.py` | Üretici: belirlilik, doluluk, yerleşim, siparişler, dinamiklik |
 | `test_s_shape_traversal.py` | Gerçek S-shape traversal doğrulaması |
 | `test_relocation.py` | Sayaç bağımsızlığı, öneri üretimi |
 | `test_depso.py`, `test_batching.py`, `test_warehouse.py`, `test_smoke.py` | Temel modül testleri |
@@ -175,7 +191,7 @@ warehouse_optimization/
 ├── benchmarks/
 ├── ui/
 │   └── pages/
-├── tests/                 # 110 test
+├── tests/                 # 149 test
 ├── run_batch.py           # tek deney koşucusu (35 senaryo)
 ├── regen_35.py            # batch sonuçlarından rapor üretir
 ├── docs/                  # denetim raporları ve notlar
@@ -186,5 +202,5 @@ warehouse_optimization/
 ## Kaynaklar
 
 Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
-`tests/` (110 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
+`tests/` (149 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
 `master`'a birleştirildi.
