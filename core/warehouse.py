@@ -59,34 +59,66 @@ class Warehouse:
 
     DEPOT = RUNTIME['depot_location_id']  # -1
 
-    def __init__(self):
+    # Parametrik depo düzeni için kullanılabilen anahtarlar. Verilmeyenler
+    # config.WAREHOUSE'dan (Kübler düzeni) gelir.
+    LAYOUT_KEYS = (
+        'num_aisles', 'num_blocks', 'racks_per_side_per_block', 'locs_per_rack',
+        'rack_width_LU', 'cross_aisle_width_LU', 'aisle_spacing_LU',
+        'class_A_pct', 'class_B_pct',
+    )
+
+    def __init__(self, layout: dict | None = None):
+        """
+        layout: depo düzeni. None → Kübler düzeni (config.WAREHOUSE).
+            Örn. Warehouse({'num_aisles': 20, 'num_blocks': 1,
+                            'racks_per_side_per_block': 60})
+        num_blocks: 1 = ara koridorsuz (geçişsiz), 2 = bir ara koridor
+            (tek geçişli), 3 = iki ara koridor (iki geçişli).
+        """
+        layout = dict(layout or {})
+        unknown = set(layout) - set(self.LAYOUT_KEYS) - {'total_locations', 'num_cross_aisles'}
+        if unknown:
+            raise ValueError(f"Bilinmeyen depo parametresi: {sorted(unknown)}")
+        L = {k: WAREHOUSE[k] for k in self.LAYOUT_KEYS}
+        L.update({k: v for k, v in layout.items() if k in self.LAYOUT_KEYS})
+        if L['num_blocks'] < 1 or L['num_aisles'] < 1:
+            raise ValueError("num_blocks ve num_aisles en az 1 olmalı")
+        self.layout = L
+
         # Topoloji
-        self.num_aisles = WAREHOUSE['num_aisles']
-        self.num_blocks = WAREHOUSE['num_blocks']
-        self.racks_per_block = WAREHOUSE['racks_per_side_per_block']
-        self.locs_per_rack = WAREHOUSE['locs_per_rack']
-        self.total_locations = WAREHOUSE['total_locations']
+        self.num_aisles = L['num_aisles']
+        self.num_blocks = L['num_blocks']
+        self.racks_per_block = L['racks_per_side_per_block']
+        self.locs_per_rack = L['locs_per_rack']
+        self.total_locations = (self.num_aisles * 2 * self.num_blocks *
+                                self.racks_per_block * self.locs_per_rack)
+        for key, derived in (('total_locations', self.total_locations),
+                             ('num_cross_aisles', self.num_blocks + 1)):
+            given = layout.get(key, WAREHOUSE[key] if not layout else None)
+            if given is not None and given != derived:
+                raise ValueError(f"{key}={given} düzenle tutarsız (hesaplanan {derived})")
 
         # Boyutlar
-        self.rack_width = WAREHOUSE['rack_width_LU']
-        self.cross_aisle_width = WAREHOUSE['cross_aisle_width_LU']
-        self.aisle_spacing = WAREHOUSE['aisle_spacing_LU']
+        self.rack_width = L['rack_width_LU']
+        self.cross_aisle_width = L['cross_aisle_width_LU']
+        self.aisle_spacing = L['aisle_spacing_LU']
+        self.class_pct = {'A': L['class_A_pct'], 'B': L['class_B_pct'],
+                          'C': 1.0 - L['class_A_pct'] - L['class_B_pct']}
 
         # Türetilmiş ölçüler
-        self.racks_per_aisle_side = self.num_blocks * self.racks_per_block  # 90
-        self.locs_per_aisle_side = self.racks_per_aisle_side * self.locs_per_rack  # 360
-        self.locs_per_aisle = 2 * self.locs_per_aisle_side  # 720
+        self.racks_per_aisle_side = self.num_blocks * self.racks_per_block
+        self.locs_per_aisle_side = self.racks_per_aisle_side * self.locs_per_rack
+        self.locs_per_aisle = 2 * self.locs_per_aisle_side
 
         # Cross aisle x koordinatları
-        # Yapı: cross[0] | blok 0 (30 LU) | cross[1] | blok 1 (30 LU) | cross[2] | blok 2 (30 LU) | cross[3]
-        self.block_length = self.racks_per_block * self.rack_width  # 30 LU
+        # Yapı: cross[0] | blok 0 | cross[1] | blok 1 | ... | cross[num_blocks]
+        self.block_length = self.racks_per_block * self.rack_width
         self.cross_aisle_x: list[float] = []
         x = 0.0
         for b in range(self.num_blocks + 1):
             self.cross_aisle_x.append(x)
             if b < self.num_blocks:
                 x += self.block_length + (self.cross_aisle_width if b > 0 else 0)
-        # cross_aisle_x = [0.0, 30.0, 62.0, 94.0]  (exact)
 
         # Aisle merkez y koordinatları
         self.aisle_y: list[float] = [
@@ -117,8 +149,8 @@ class Warehouse:
 
     @property
     def num_cross_aisles_inner(self) -> int:
-        """İç cross aisle sayısı (uçlar hariç)."""
-        return WAREHOUSE['num_cross_aisles'] - 2  # 2 iç cross aisle
+        """İç cross aisle sayısı (uçlar hariç) = blok sayısı - 1."""
+        return self.num_blocks - 1
 
     # ────────────────────────────────────────────────────────────
     # LOKASYON KODLAMA / ÇÖZME
@@ -356,8 +388,8 @@ class Warehouse:
         sorted_locs = self.locations_sorted_by_depot_distance()
         n = self.total_locations
 
-        n_a = int(n * WAREHOUSE['class_A_pct'])
-        n_b = int(n * WAREHOUSE['class_B_pct'])
+        n_a = int(n * self.class_pct['A'])
+        n_b = int(n * self.class_pct['B'])
 
         return {
             'A': sorted_locs[:n_a],
@@ -371,6 +403,7 @@ class Warehouse:
 
     def summary(self) -> dict:
         return {
+            'layout': dict(self.layout),
             'num_aisles': self.num_aisles,
             'num_blocks': self.num_blocks,
             'total_locations': self.total_locations,

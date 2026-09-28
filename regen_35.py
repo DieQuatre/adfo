@@ -137,13 +137,15 @@ def algorithm_comparison(rows: list) -> list[str]:
         return []
     out = ["## Algoritma karşılaştırması", "",
            "Senaryo bazında ortalama toplam mesafesi en kısa olan algoritma:", ""]
-    wins = {a: 0 for a in algs}
+    wins = {a: 0 for a in algs + ['berabere']}
     for r in rows:
-        best = min(algs, key=lambda a: r['stats'][a]['mean_td'])
-        wins[best] += 1
-    out.append("| " + " | ".join(algs) + " |")
-    out.append("|" + "---|" * len(algs))
-    out.append("| " + " | ".join(f"{wins[a]}/{len(rows)}" for a in algs) + " |")
+        best = min(r['stats'][a]['mean_td'] for a in algs)
+        winners = [a for a in algs if r['stats'][a]['mean_td'] <= best + 1e-6]
+        wins[winners[0] if len(winners) == 1 else 'berabere'] += 1
+    cols = algs + ['berabere']
+    out.append("| " + " | ".join(cols) + " |")
+    out.append("|" + "---|" * len(cols))
+    out.append("| " + " | ".join(f"{wins[a]}/{len(rows)}" for a in cols) + " |")
     out += ["", "Sipariş sayısına göre ortalama mesafe (LU) ve süre (s):", ""]
     out.append("| k | " + " | ".join(f"{a} LU | {a} s" for a in algs) + " |")
     out.append("|---|" + "---|---|" * len(algs))
