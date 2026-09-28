@@ -39,8 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.data_loader import Order
 from algorithms.base import BatchingRoutingAlgorithm, Batch, Solution
 from algorithms.batching.first_fit import first_fit_batching
-from algorithms.routing.nearest_neighbor import nearest_neighbor_route
-from algorithms.routing.two_opt import nn_then_2opt
+from algorithms.routing.route_cache import RouteCache
 from config import DEPSO as DEPSO_CONFIG, ITEMS
 
 
@@ -89,11 +88,13 @@ class DEPSO(BatchingRoutingAlgorithm):
         seed: int | None = None,
         verbose: bool = False,
     ):
-        self.num_particles = num_particles or DEPSO_CONFIG['num_particles']
-        self.num_iterations = num_iterations or DEPSO_CONFIG['num_iterations']
+        self.num_particles = num_particles if num_particles is not None else DEPSO_CONFIG['num_particles']
+        self.num_iterations = num_iterations if num_iterations is not None else DEPSO_CONFIG['num_iterations']
         self.sgbest = sgbest_threshold if sgbest_threshold is not None else DEPSO_CONFIG['sgbest_threshold']
-        self.max_ls_iters = max_local_search_iterations or DEPSO_CONFIG['max_local_search_iterations']
-        self.max_stag = max_stagnation_bound or DEPSO_CONFIG['max_stagnation_bound']
+        self.max_ls_iters = (max_local_search_iterations if max_local_search_iterations is not None
+                             else DEPSO_CONFIG['max_local_search_iterations'])
+        self.max_stag = (max_stagnation_bound if max_stagnation_bound is not None
+                         else DEPSO_CONFIG['max_stagnation_bound'])
         self.swap_thresh = DEPSO_CONFIG['swap_threshold']
         self.shift_thresh = DEPSO_CONFIG['shift_threshold']
         self.verbose = verbose
@@ -105,6 +106,7 @@ class DEPSO(BatchingRoutingAlgorithm):
         # Runtime state
         self._orders: list[Order] = []
         self._warehouse = None
+        self._routes: RouteCache | None = None
         self._K: int = 0  # sipariş sayısı
 
         # Swarm state
@@ -186,7 +188,8 @@ class DEPSO(BatchingRoutingAlgorithm):
             total_travel_distance=self.gbest_distance,
             iterations_used=self.num_iterations,
             convergence_history=self.convergence_history,
-            extra_info={'num_particles': self.num_particles},
+            extra_info={'num_particles': self.num_particles,
+                        'route_cache_size': len(self._routes)},
         )
 
     # ──────────────────────────────────────────────────────────────
@@ -201,6 +204,8 @@ class DEPSO(BatchingRoutingAlgorithm):
         Adım 5: Pbest = current, Gbest = en iyi
         """
         self.particles = []
+        # Ortak rota servisi (NN + 2-opt, önbellekli). Her çözümde yenilenir.
+        self._routes = RouteCache(self._warehouse)
 
         # Adım 1: random particles
         for i in range(self.num_particles - 1):
@@ -270,19 +275,7 @@ class DEPSO(BatchingRoutingAlgorithm):
         """
         p = self.particles[p_idx]
 
-        # Permütasyon sırasına göre siparişleri çek
-        ordered = [self._orders[i] for i in p.permutation]
-
-        # Batching
-        batches = first_fit_batching(ordered)
-
-        # Her batch için routing
-        total = 0.0
-        for b in batches:
-            route, dist = nn_then_2opt(b.locations, self._warehouse)
-            b.route = route
-            b.travel_distance = dist
-            total += dist
+        batches, total = self._batches_for(p.permutation)
 
         p.travel_distance = total
 
@@ -297,6 +290,16 @@ class DEPSO(BatchingRoutingAlgorithm):
             self.gbest_distance = total
             self.gbest_permutation = p.permutation[:]
             self.gbest_batches = batches
+
+    def _batches_for(self, permutation: list[int]) -> tuple[list[Batch], float]:
+        """Permütasyon → first-fit batching → her batch için ortak rota servisi."""
+        ordered = [self._orders[i] for i in permutation]
+        batches = first_fit_batching(ordered)
+        total = 0.0
+        for b in batches:
+            b.route, b.travel_distance = self._routes.get(b.locations)
+            total += b.travel_distance
+        return batches, total
 
     # ──────────────────────────────────────────────────────────────
     # ADIM 7: MOVEMENT (Appendix E)
@@ -478,8 +481,8 @@ class DEPSO(BatchingRoutingAlgorithm):
     def _local_search(self) -> None:
         """
         Stagnation threshold'a ulaşıldıysa Gbest etrafında swap araması yap.
-        Paper Appendix G: sadece swap operatörü + first-fit + NN routing.
-        (2-opt değil — paper açıkça yazmıyor, swap zaten permutation seviyesinde)
+        Paper Appendix G: swap operatörü + first-fit; rotalar diğer tüm
+        değerlendirmelerle aynı rota servisiyle (NN + 2-opt) hesaplanır.
         """
         threshold = round(
             self.max_stag * (1 - self._current_iteration / self.num_iterations)
@@ -499,15 +502,10 @@ class DEPSO(BatchingRoutingAlgorithm):
                 i, j = self._rng.sample(range(self._K), 2)
                 trial[i], trial[j] = trial[j], trial[i]
 
-            ordered = [self._orders[k] for k in trial]
-            batches = first_fit_batching(ordered)
-            total = 0.0
-            for b in batches:
-                # NN yeterli — local search hızı için 2-opt atlıyoruz
-                route, dist = nearest_neighbor_route(b.locations, self._warehouse)
-                b.route = route
-                b.travel_distance = dist
-                total += dist
+            # Ana döngüyle AYNI ölçü (first-fit + NN + 2-opt). Eskiden burada
+            # yalnızca NN kullanılıyordu; Gbest iki farklı ölçünün karışımı
+            # oluyordu. Önbellek sayesinde 2-opt maliyeti düşük.
+            batches, total = self._batches_for(trial)
 
             if total < current_distance:
                 self.gbest_distance = total
