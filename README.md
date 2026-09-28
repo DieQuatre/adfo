@@ -1,10 +1,12 @@
-# Warehouse Optimization — Paper-2 + RBRS-AE
+# Warehouse Optimization — DEPSO · RBRS-AE · ALNS
 
 > **Açık sorunlar:** 2026-09-28 denetiminde bulunan ve henüz düzeltilmemiş
 > hatalar için bkz. [`docs/DENETIM_2026-09-28.md`](docs/DENETIM_2026-09-28.md).
 > Bu hatalar düzeltilene kadar aşağıdaki sonuçlar ön sonuç sayılmalıdır.
 
-Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
+Kübler, Glock, Bauernhansl (2020) reproduksiyonu (DEPSO) + RBRS-AE + ALNS.
+Üç algoritma aynı temel sınıfı, aynı kapasiteyi ve aynı rota servisini
+(`algorithms/routing/route_cache.py`, NN + 2-opt) kullanır.
 
 **Bağımsız denetim ile doğrulanmış.** Rapor: 6 kritik kusur bulundu ve düzeltildi,
 35 senaryonun tamamı paper veri setiyle sıfırdan koşuldu.
@@ -21,12 +23,14 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu + RBRS-AE algoritması.
 | `algorithms/routing/*` | ✅ NN, 2-opt, **gerçek S-Shape traversal** |
 | `algorithms/batching/*` | ✅ First-fit, Savings |
 | `algorithms/depso.py` | ✅ Paper algoritması — 35 senaryoda doğrulandı |
-| `algorithms/rbrs_ae.py` | ✅ Regret tabanı düzeltildi — DEPSO'dan üstün |
-| `algorithms/relocation.py` | ✅ Çalışıyor (önceden ölüydü, düzeltildi) |
+| `algorithms/rbrs_ae.py` | ✅ Regret tabanı düzeltildi |
+| `algorithms/alns.py` | ✅ ALNS — formülasyon: `docs/ALNS_formulasyon.md` |
+| `algorithms/routing/route_cache.py` | ✅ Ortak rota servisi (tüm algoritmalar) |
+| `algorithms/relocation.py` | ⚠️ Makale 5.3'e göre yeniden yazılacak (denetim K1, K2) |
 | `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
 | `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
-| `run_batch.py` | ✅ 35 senaryo koşucu |
-| `tests/` | ✅ **79 test**, tamamı geçiyor |
+| `run_batch.py` | ✅ 35 senaryo koşucu (5 algoritma, paralel) |
+| `tests/` | ✅ **110 test**, tamamı geçiyor |
 
 ---
 
@@ -103,7 +107,7 @@ streamlit run ui/app.py
 |---|---|
 | 📦 Ana Sayfa | Depo görselleştirme |
 | 🎯 Tek Koşu | Algoritma çalıştır, rota görselleştir |
-| ⚖️ Karşılaştırma | 4 algoritmayı yan yana koştur |
+| ⚖️ Karşılaştırma | SOP, FCFS, DEPSO, RBRS-AE, ALNS yan yana |
 | 🔄 Dynamic Relocation | 9 periyot Holt-Winters + relocation (artık çalışıyor) |
 | 📊 35 Senaryo | Paper Appendix H tam karşılaştırma |
 
@@ -112,11 +116,17 @@ streamlit run ui/app.py
 ## 35 Senaryo Koşumu
 
 ```bash
-python run_batch.py --batch 1   # senaryo 1-5
-...
-python run_batch.py --batch 7   # senaryo 31-35
-python run_batch.py --summary   # özet tablo
+python run_batch.py --batch all --jobs 8   # 35 senaryo, 8 paralel işlem
+python run_batch.py --batch 3              # yalnızca senaryo 11-15
+python run_batch.py --only 50_2_6 --n 2    # hızlı deneme (results/only.json)
+python run_batch.py --summary              # kayıtlı sonuçların özeti
+python regen_35.py                         # results/paper_35_scenarios.md raporu
 ```
+
+Her senaryoda SOP, FCFS, DEPSO, RBRS-AE ve ALNS aynı siparişlerle koşar.
+Algoritma ayarları `config.py`'den gelir. `--jobs` için bilgisayarın çekirdek
+sayısının birkaç eksiği iyi bir değerdir. Sonuç dosyaları örnek bazında ham
+mesafe ve süreleri, kullanılan ayarları ve kod sürümünü içerir.
 
 Sonuçlar `results/` klasörüne kaydedilir, UI otomatik yükler.
 
@@ -132,11 +142,14 @@ yeniden koşup sonuçların üzerine yazıyordu.
 python -m pytest tests/ -v
 ```
 
-**79 test, tamamı geçiyor.**
+**110 test, tamamı geçiyor.**
 
 | Dosya | Kapsam |
 |---|---|
 | `test_audit_regressions.py` | Denetimde bulunan 6 kusur için regresyon |
+| `test_solution_integrity.py` | Her algoritmanın çözümü tutarlı mı (sipariş, kapasite, rota, mesafe) |
+| `test_alns.py` | ALNS denklemleri (6), (8), (11), (13), (16) ve operatörler |
+| `test_routing_fast_path.py` | Hızlı rota yolu eski yolla birebir aynı |
 | `test_s_shape_traversal.py` | Gerçek S-shape traversal doğrulaması |
 | `test_relocation.py` | Sayaç bağımsızlığı, öneri üretimi |
 | `test_depso.py`, `test_batching.py`, `test_warehouse.py`, `test_smoke.py` | Temel modül testleri |
@@ -162,7 +175,7 @@ warehouse_optimization/
 ├── benchmarks/
 ├── ui/
 │   └── pages/
-├── tests/                 # 79 test
+├── tests/                 # 110 test
 ├── run_batch.py           # tek deney koşucusu (35 senaryo)
 ├── regen_35.py            # batch sonuçlarından rapor üretir
 ├── docs/                  # denetim raporları ve notlar
@@ -173,5 +186,5 @@ warehouse_optimization/
 ## Kaynaklar
 
 Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
-`tests/` (79 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
+`tests/` (110 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
 `master`'a birleştirildi.
