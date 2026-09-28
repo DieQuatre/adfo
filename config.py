@@ -150,6 +150,54 @@ ALNS = {
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# PARAMETRİK PROBLEM ÜRETİCİSİ (core/generator.py, docs/URETICI.md)
+# ════════════════════════════════════════════════════════════════════════════
+# Kübler veri setinden BAĞIMSIZ, kendi üreticimiz. "grup kararı" işaretli
+# değerler henüz kesinleşmedi; değiştirmek için yalnızca burayı düzenleyin.
+GENERATOR = {
+    # ── Deney ızgarası (Emre Hoca toplantısı, 2026-08-17) ──────────────
+    'grid_sizes': [5000, 10000, 15000, 20000],   # hedef lokasyon sayısı
+    'grid_blocks': [1, 2, 3],                    # 1 geçişsiz, 2 tek geçişli, 3 iki geçişli
+    'grid_fills': [0.9, 0.7, 0.5],               # doluluk oranı (grup kararı)
+    'order_sets_per_warehouse': 10,              # her depo için sipariş seti
+    'order_set_size': 100,                       # bir setteki sipariş sayısı (grup kararı)
+
+    # ── Depo geometrisi ────────────────────────────────────────────────
+    # Koridor derinliği sabit, depo büyüdükçe koridor sayısı artar.
+    # 60 raf, 1/2/3 blok için tam bölünür.
+    'racks_per_side_total': 60,
+    'locs_per_rack': 4,
+
+    # ── Ürünler ve siparişler ──────────────────────────────────────────
+    'weight_range_WU': (0.1, 1.0),
+    'top20_share': 0.70,          # en popüler %20 ürünün satır payı (grup kararı)
+    'orders_per_item': 0.8,       # dönem başına sipariş = oran × ürün sayısı (grup kararı)
+    'max_lines_per_order': 4,     # sipariş başına satır: 1..max (grup kararı)
+    'max_qty_per_line': 4,        # satır başına adet: 1..max (grup kararı)
+
+    # ── Zaman yapısı (Holt-Winters tahmini için bir tam sezon gerekir) ─
+    'warmup_periods': 12,
+    'test_periods': 9,
+    'season_length': 12,
+    'subperiods': 20,
+
+    # ── Talep profilleri ───────────────────────────────────────────────
+    'irregular_sigma': 0.10,      # çarpımsal gürültü (lognormal σ)
+    'trend_total_change': (0.5, 1.5),   # ufuk boyunca göreli değişim aralığı
+    'season_amplitude': (0.2, 0.5),
+    'shock_up': (2.0, 4.0),
+    'shock_down': (0.2, 0.5),
+    # Dinamiklik seviyesine göre profil karışımı (oranlar toplamı 1)
+    'dynamics': {
+        'dusuk':  {'stable': 0.80, 'up': 0.05, 'down': 0.05, 'seasonal': 0.10, 'shock': 0.00},
+        'orta':   {'stable': 0.55, 'up': 0.10, 'down': 0.10, 'seasonal': 0.15, 'shock': 0.10},
+        'yuksek': {'stable': 0.30, 'up': 0.15, 'down': 0.15, 'seasonal': 0.20, 'shock': 0.20},
+    },
+    'default_dynamics': 'orta',
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # DİNAMİK STORAGE ASSIGNMENT (Paper Section 5.3, 6.4)
 # ════════════════════════════════════════════════════════════════════════════
 DYNAMIC_STORAGE = {
