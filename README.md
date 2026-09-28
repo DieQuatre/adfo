@@ -162,6 +162,21 @@ Ayrıntılar, makaleden sapma ve ilk sonuçlar: `docs/RELOCATION.md`.
 
 ---
 
+## Web sitesi (Raf Arası)
+
+Site `site/` klasöründe; sayılar elle girilmez, deney sonuçlarından üretilir:
+
+```bash
+python site_data.py            # results/ altındaki tüm deneyleri site/data/catalog.js'e toplar
+python site_data.py --races    # yarış animasyonlarının rotalarını da yeniden hesaplar
+```
+
+Yerelde görmek için `site/index.html` dosyasını tarayıcıda açmak yeterli. `site/` master'a
+gönderildiğinde GitHub Pages ile yayınlanır (`.github/workflows/pages.yml`; ilk seferde
+Settings → Pages → Source: GitHub Actions).
+
+---
+
 ## Testler
 
 ```bash

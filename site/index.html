@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Raf Arası</title>
+<meta name="description" content="Depoda sipariş toplama: üç algoritmanın aynı siparişler için ürettiği rotalar, deney sonuçları ve dinamik yer ataması.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--BODY-->
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><i></i>Raf Arası</a>
+    <nav aria-label="Bölümler">
+      <a href="#problem">Problem</a>
+      <a href="#algoritmalar">Algoritmalar</a>
+      <a href="#yaris">Yarış</a>
+      <a href="#deneyler">Deneyler</a>
+      <a href="#yer-degisimi">Yer değişimi</a>
+      <a href="#dogrulama">Doğrulama</a>
+      <a href="#kendin-dene">Kendin dene</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="wrap" style="padding-top:44px">
+    <p class="eyebrow">Sipariş toplama optimizasyonu · araştırma projesi</p>
+    <h1>Depoda en çok zaman <span class="tape">yürürken</span> geçer.</h1>
+    <p class="lede">Bir depoda siparişleri hazırlayan kişi (<b>toplayıcı</b>) arabasıyla raflar arasında dolaşıp ürünleri toplar. İş süresinin büyük kısmı yürümekle geçer. Bu proje, aynı siparişleri daha az yürüyerek toplamanın yollarını üç algoritmayla arıyor ve karşılaştırıyor.</p>
+  </section>
+
+  <section class="wrap" id="problem">
+    <p class="eyebrow">Problem</p>
+    <h2>Üç karar, tek hedef: daha az yürümek</h2>
+    <p class="muted">Aşağıdaki çizimler gerçek bir depo örneğinden. Kuşbakışı görüyorsunuz: gri şeritler raflar, aralarındaki açık yollar koridorlar, sağ alttaki üçgen kapı.</p>
+    <div class="grid3">
+      <article class="card">
+        <span class="step">KARAR 1</span>
+        <h3>Ürün nereye konmalı?</h3>
+        <canvas id="ill1" aria-label="Kapıya yakın raflarda çok satan ürünler" role="img"></canvas>
+        <p>Çok satan ürünler kapıya yakın, az satanlar uzağa. Koyu renkli raflar en çok aranan ürünlerin olduğu bölge.</p>
+      </article>
+      <article class="card">
+        <span class="step">KARAR 2</span>
+        <h3>Hangi siparişler aynı tura girmeli?</h3>
+        <canvas id="ill2" aria-label="Aynı tura konan siparişlerin ürünleri aynı renkte" role="img"></canvas>
+        <p>Araba en fazla 100 birim ağırlık taşır. Birbirine yakın ürünleri olan siparişleri aynı tura koymak yolu kısaltır. Aynı renkteki ürünler aynı turda toplanır.</p>
+      </article>
+      <article class="card">
+        <span class="step">KARAR 3</span>
+        <h3>Hangi sırayla yürünmeli?</h3>
+        <canvas id="ill3" aria-label="Bir turun koridorlar boyunca rotası" role="img"></canvas>
+        <p>Bir turdaki ürünlerin hangi sırayla alınacağı. Toplayıcı rafların içinden geçemez, yalnızca koridorlardan yürür.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="wrap" id="algoritmalar">
+    <p class="eyebrow">Algoritmalar</p>
+    <h2>Aynı soruya üç farklı yaklaşım</h2>
+    <p class="muted">Üçü de aynı kuralları kullanır: aynı araba kapasitesi, aynı rota hesabı. Tek fark, iyi bir gruplamayı nasıl aradıkları.</p>
+    <div class="grid3">
+      <article class="card algo-card" style="--c:var(--s1)">
+        <h3><span class="dot"></span>DEPSO</h3>
+        <p class="tagline">Birbirinden öğrenen bir sürü.</p>
+        <p>Beş aday plan aynı anda denenir. Her biri hem kendi en iyi hâline hem de sürünün en iyisine doğru küçük adımlar atar, takılırsa rastgele değişikliklerle sarsılır. Kübler ve arkadaşlarının (2020) yöntemi; projede başlangıç noktası.</p>
+      </article>
+      <article class="card algo-card" style="--c:var(--s2)">
+        <h3><span class="dot"></span>RBRS-AE</h3>
+        <p class="tagline">Önce en çok pişman olacağın kararı ver.</p>
+        <p>Yerleştirmesi zor siparişler önce yerleştirilir: ertelenirse en çok maliyet çıkaracak olan. Sonra en verimsiz turlar sökülüp yeniden kurulur; sökme oranı zamanla azalır.</p>
+      </article>
+      <article class="card algo-card" style="--c:var(--s3)">
+        <h3><span class="dot"></span>ALNS</h3>
+        <p class="tagline">Boz, yeniden kur, işe yarayanı hatırla.</p>
+        <p>Her adımda planın bir kısmı sökülür ve farklı yollarla yeniden kurulur. Hangi sökme ve kurma yöntemi daha çok işe yarıyorsa ona daha sık başvurulur.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="wrap" id="yaris">
+    <p class="eyebrow">Yarış</p>
+    <h2>Aynı siparişler, üç toplayıcı</h2>
+    <p class="muted">Üç toplayıcı aynı hızda yürür. Her biri kendi algoritmasının planını izler. Rotalar gerçek algoritma çıktısıdır.</p>
+    <div class="controls" role="group" aria-label="Yarış ayarları">
+      <label class="inline" for="raceSel">Problem <select id="raceSel"></select></label>
+      <button class="btn" id="playBtn" type="button">Durdur</button>
+      <button class="btn ghost" id="resetBtn" type="button">Baştan</button>
+      <label class="inline speed" for="speed">Hız <input id="speed" type="range" min="0.5" max="8" step="0.5" value="3"><output id="speedOut" class="mono">3×</output></label>
+      <div class="clock mono" id="clock">0 / 0 LU</div>
+    </div>
+    <div class="lanes" id="lanes"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--rack)"></i>Raf</span>
+      <span><i class="sw" style="background:var(--cross)"></i>Ara koridor</span>
+      <span><i class="sw" style="border:2px solid var(--muted)"></i>Toplanacak ürün</span>
+      <span><i class="sw" style="background:var(--muted)"></i>Toplanan ürün</span>
+      <span>▲ Kapı: her tur burada başlar ve biter</span>
+      <span>LU: uzunluk birimi, 1 raf genişliği</span>
+    </div>
+  </section>
+
+  <section class="wrap" id="deneyler">
+    <p class="eyebrow">Deneyler</p>
+    <h2>Hangi durumda hangi algoritma?</h2>
+    <p class="muted">Her satır bir problem örneği: belirli boyutta, koridor yapısında ve dolulukta üretilmiş bir depo ve bir sipariş seti. Yeni deneyler eklendikçe filtreler kendiliğinden genişler.</p>
+    <div class="filters" id="filters"></div>
+    <div class="viewbar">
+      <label class="inline" for="metricSel">Ölçü <select id="metricSel"></select></label>
+      <label class="inline" for="groupSel">Karşılaştır <select id="groupSel"></select></label>
+    </div>
+    <div class="chartbox" id="chartbox"></div>
+    <p class="headline" id="headline"></p>
+    <details><summary>Tabloyu göster</summary><div class="tablewrap" id="tablewrap"></div></details>
+  </section>
+
+  <section class="wrap" id="yer-degisimi">
+    <p class="eyebrow">Dinamik yer ataması</p>
+    <h2>Talep değişince ürünlerin yeri de değişmeli mi?</h2>
+    <p class="muted">Satışlar zamanla değişir; dün çok satan ürün bugün az satabilir. Her dönemin sonunda algoritma, yanlış bölgede kalan ürünleri taşımanın kazancını taşıma emeğiyle karşılaştırır ve kazançlıysa taşır. Grafik, taşıma yapılmayan depoya göre yürüme mesafesindeki azalmayı ve taşımaya harcanan emeği gösterir.</p>
+    <div class="viewbar"><label class="inline" for="dynSel">Deney <select id="dynSel"></select></label></div>
+    <div class="chartbox" id="dynbox"></div>
+    <p class="headline" id="dynHeadline"></p>
+  </section>
+
+  <section class="wrap" id="dogrulama">
+    <p class="eyebrow">Referans doğrulama</p>
+    <h2>Başlangıç noktasını doğru kurduk mu?</h2>
+    <p class="muted">DEPSO'yu makaledeki problem yapısıyla kurup, makalede raporlanan sonuçlarla karşılaştırdık. Ölçü: her siparişi ayrı bir turda toplamaya (SOP) göre yürüme mesafesindeki azalma.</p>
+    <div class="chartbox" id="refbox"></div>
+    <p class="headline" id="refHeadline"></p>
+  </section>
+
+  <section class="wrap" id="kendin-dene">
+    <p class="eyebrow">Kendin dene</p>
+    <h2>Kendi deponu kur</h2>
+    <div class="soon">
+      <strong>Bir sonraki sürümde.</strong>
+      <span class="muted">Kapının yerini, koridor ve blok sayısını, sipariş sayısını seçip ya da raflara tıklayıp kendi siparişini oluşturup üç algoritmayı tarayıcıda yarıştırabileceksin. Bu bölüm tarayıcı sürümüyle çalışacak; yukarıdaki deney sonuçları ise araştırmanın resmî koduyla üretiliyor.</span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span id="stamp"></span>
+    <span>Kaynak kod ve deneyler: <a href="https://github.com/DieQuatre/adfo">github.com/DieQuatre/adfo</a></span>
+  </div>
+</footer>
+<!--/BODY-->
+<script src="data/catalog.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
