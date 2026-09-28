@@ -1,602 +1,446 @@
 """
 algorithms/relocation.py
-=========================
-Dynamic Storage Location Assignment — Paper Section 5.3, 6.4
+========================
+Dinamik yer ataması (relocation) — Kübler, Glock ve Bauernhansl (2020), Bölüm 5.3.
 
-Her periyot sonunda:
-1) Holt-Winters ile gelecek periyot tahmini yapılır
-2) Tahmin bazlı ABC sınıflandırması yapılır
-3) Yanlış sınıftaki itemler belirlenir (eşik o=2 periyot)
-4) Relocation önerileri test edilir:
-   - Relocation effort hesaplanır (Em_dis + Em_phy + Em_adm)
-   - Taşıma sonrası travel distance azalması tahmin edilir
-   - Azalma > effort ise taşı, değilse at
-5) Max 50 öneri test edilir
+Her dönemin sonunda:
 
-Relocation effort bileşenleri:
-  E_dis = depot ↔ current loc + current loc ↔ target loc mesafesi
-  E_phy = t_phy × v_pick = 180 LU
-  E_adm = t_adm × v_pick = 60 LU
-  E_total = E_dis + E_phy + E_adm
+5.3.1 Sınıflandırma
+    Gerçekleşen (t-1) ve tahmin edilen (t, ..., t+U_for-1) satır sayılarına
+    göre ABC sınıfları ve sınıf sınırları (A/B sınırı = son A ürününün satır
+    sayısı, B/C sınırı = son B ürününün). Ürün yanlış sınıftaysa sayaç artar.
+    Aday: en az `o` dönemdir yanlış sınıfta VE tahmine göre hedef sınıfta en
+    az `u` dönem kalacak (U_tar ≥ u).
 
-Kabul kriteri (paper):
-  TDR_rel > 0  (anlık azalma)
-  VE_future > E_total - TDR_rel  (gelecek kazanç)
+5.3.2 Öncelik
+    d_{m,relCL,r} = |satır_m,r − sınır_relCL,r|; PV_m = Σ_{r=t}^{t+U_tar−1} d.
+    relCL: ürünün mevcut sınıfı ile hedef sınıfı arasındaki sınır (yükselen
+    ürün için hedef sınıfın alt sınırı, düşen ürün için mevcut sınıfın alt
+    sınırı). Liste PV'ye göre azalan.
+
+5.3.3 Yer kontrolü
+    FV_cl = boş + boşalabilecek − dolabilecek. Negatifse o sınıfa girecek en
+    düşük PV'li ürünler listeden çıkarılır.
+
+5.3.4 Taşıma kuralı
+    Listedeki ilk yükselen ürün. Senaryo 1: hedef sınıfta boş yer. Senaryo 2:
+    doğrudan takas (hedef sınıftan, mevcut sınıfa inecek ürünle). Senaryo 3:
+    dolaylı takas (hedef sınıftan bir ürün üçüncü sınıfın boş yerine).
+    Senaryo 4: üç ürünlü döngü. Öncelik 1 > {2, 3 rastgele} > 4. Düşen ürün:
+    ilgili sınıfta en yüksek PV'li, eşitlikte kapıya en yakın.
+
+5.3.5 Verimlilik
+    Efor: her taşınan ürün için (mevcut → hedef mesafe) + t_phy·v + t_adm·v.
+    Tdr_{t-1} = Td_com − Td_rel. Tdr ≤ 0 ise ret. Değilse
+    λ = Tdr / d_rel_{t-1}, gelecek kazanç Σ_r λ·d_rel_r (yalnızca yükselen
+    ürünün serisi); kazanç > efor ise kabul, Td_com ← Td_rel.
+
+MAKALEDEN BİLİNÇLİ SAPMA (docs/RELOCATION.md)
+    Makale Td_rel'i her öneri için dönemin tüm siparişlerini DEPSO ile yeniden
+    çözerek hesaplar. Burada dönemin siparişleri seçilen algoritmayla BİR KEZ
+    gruplanır; öneri denenirken gruplar sabit tutulur ve yalnızca taşınan
+    ürünün geçtiği grupların rotası (NN + 2-opt) yeniden hesaplanır. Bu,
+    9 dönemlik deneyi günlerden dakikalara indirir. Sapmanın büyüklüğü
+    `validate_approximation` ile ölçülür.
 """
 
 from __future__ import annotations
 
-import sys
+import random
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import Callable
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import numpy as np
 
-from config import DYNAMIC_STORAGE, ITEMS, WAREHOUSE
-from core.data_loader import Order
+from config import DYNAMIC_STORAGE, ITEMS
+from core.data_loader import Order, OrderLine
+from core.forecasting import ItemForecaster
+from algorithms.routing.route_cache import RouteCache
+
+CLASS_RANK = {'A': 0, 'B': 1, 'C': 2}
+RANK_CLASS = 'ABC'
+
+# batch_fn(orders, warehouse) -> list[list[Order]]  (algoritmanın gruplaması)
+BatchFn = Callable[[list[Order], object], list[list[Order]]]
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# VERİ SINIFLARI
+# SINIFLANDIRMA
+# ════════════════════════════════════════════════════════════════════════════
+
+def abc_with_limits(values: np.ndarray, class_pct: dict) -> tuple[np.ndarray, dict]:
+    """
+    ABC sınıfı (0=A, 1=B, 2=C) ve sınırlar: {'A': son A ürününün değeri,
+    'B': son B ürününün değeri}. Eşitlikte düşük ürün numarası önce.
+    """
+    n = len(values)
+    order = np.lexsort((np.arange(n), -np.asarray(values, dtype=float)))
+    n_a = int(n * class_pct['A'])
+    n_b = int(n * class_pct['B'])
+    cls = np.full(n, 2, dtype=np.int8)
+    cls[order[:n_a]] = 0
+    cls[order[n_a:n_a + n_b]] = 1
+    limits = {'A': float(values[order[n_a - 1]]) if n_a else float('inf'),
+              'B': float(values[order[n_a + n_b - 1]]) if n_a + n_b else float('inf')}
+    return cls, limits
+
+
+def relevant_limit(current: int, target: int) -> str:
+    """Mevcut ve hedef sınıf arasındaki ilgili sınır ('A' ya da 'B')."""
+    if target < current:                       # yükselen: hedefin alt sınırı
+        return RANK_CLASS[target]
+    return RANK_CLASS[current]                 # düşen: mevcut sınıfın alt sınırı
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SONUÇ TİPLERİ
 # ════════════════════════════════════════════════════════════════════════════
 
 @dataclass
-class ItemState:
-    """Bir itemin mevcut durumu."""
-    item_id: int
-    location: int
-    current_class: str       # 'A', 'B', 'C'
-    forecast_class: str      # tahmin bazlı sınıf
-    periods_in_wrong_class: int = 0
-    periods_in_target_class: int = 0  # tahmin bazlı hedef sınıfta kalma
+class Move:
+    item: int
+    src: int
+    dst: int
+    src_class: str
+    dst_class: str
 
 
 @dataclass
-class RelocationResult:
-    """Bir periyodun relocation sonuçları."""
+class Suggestion:
+    scenario: int
+    moves: list[Move]
+    effort: float = 0.0
+    tdr: float = 0.0
+    future_gain: float = 0.0
+    accepted: bool = False
+    reason: str = ''
+
+
+@dataclass
+class PeriodRelocation:
     period: int
-    num_suggestions_tested: int = 0
-    num_accepted: int = 0
-    num_rejected: int = 0
-    total_relocation_effort_LU: float = 0.0
-    travel_distance_before: float = 0.0
-    travel_distance_after: float = 0.0
+    candidates: int = 0
+    tested: int = 0
+    accepted: int = 0
+    effort_LU: float = 0.0
+    td_before_LU: float = 0.0      # bu dönemin siparişleri, taşıma öncesi
+    td_after_LU: float = 0.0       # aynı siparişler, kabul edilen taşımalarla
+    suggestions: list[Suggestion] = field(default_factory=list)
 
     @property
-    def travel_distance_reduction(self) -> float:
-        return self.travel_distance_before - self.travel_distance_after
-
-    @property
-    def reduction_pct(self) -> float:
-        if self.travel_distance_before == 0:
-            return 0.0
-        return self.travel_distance_reduction / self.travel_distance_before * 100
-
-    @property
-    def relocation_effort_pct(self) -> float:
-        if self.travel_distance_before == 0:
-            return 0.0
-        return self.total_relocation_effort_LU / self.travel_distance_before * 100
-
-    @property
-    def net_improvement_pct(self) -> float:
-        return self.reduction_pct - self.relocation_effort_pct
+    def relocated_items(self) -> int:
+        return sum(len(s.moves) for s in self.suggestions if s.accepted)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# DYNAMIC RELOCATION ALGORİTMASI
+# ANA SINIF
 # ════════════════════════════════════════════════════════════════════════════
 
 class DynamicRelocation:
     """
-    Paper Section 5.3 — Dynamic Storage Location Assignment.
+    Kullanım (bkz. run_dynamic.py):
 
-    Kullanım:
-        reloc = DynamicRelocation(warehouse, location_classes)
-        reloc.initialize(item_locations, item_classes)
-
-        for period in range(9):
-            orders = load_orders(period)
-            result = reloc.run_period(period, orders, forecaster, algorithm)
+        reloc = DynamicRelocation(warehouse, zones, initial_locations, demand, warmup)
+        for p in test_periods:
+            ... dönemi çöz ...
+            res = reloc.run_period(p, period_orders, batch_fn)
     """
 
-    # Fiziksel + admin efor (paper Table 2)
     E_PHY = ITEMS['physical_effort_LU']   # 180 LU
     E_ADM = ITEMS['admin_effort_LU']      # 60 LU
 
-    def __init__(self, warehouse, location_classes: dict[str, list[int]]):
+    def __init__(self, warehouse, zones: dict[str, list[int]],
+                 initial_locations, demand: np.ndarray, warmup: int,
+                 cfg: dict | None = None):
         self.wh = warehouse
-        self.location_classes = location_classes  # {'A': [...], 'B': [...], 'C': [...]}
+        self.cfg = {**DYNAMIC_STORAGE, **(cfg or {})}
+        self.o = self.cfg['min_periods_in_wrong_class_o']
+        self.u = self.cfg['min_periods_in_target_class_u']
+        self.U_for = self.cfg['forecast_horizon']
+        self.max_suggestions = self.cfg['max_relocation_suggestions']
+        self.rng = random.Random(self.cfg['seed'])
 
-        # Item durumları
-        self.item_states: dict[int, ItemState] = {}
+        self.demand = np.asarray(demand, dtype=float)
+        self.n_items = self.demand.shape[0]
+        self.class_pct = warehouse.class_pct
 
-        # Lokasyon → item mapping (hangi lokasyonda hangi item var)
-        self.loc_to_item: dict[int, int] = {}
+        # Lokasyon → sınıf ve sınıf bölgeleri
+        self.zone_of = {}
+        for c, locs in zones.items():
+            for l in locs:
+                self.zone_of[int(l)] = CLASS_RANK[c]
+        self.loc = np.asarray(initial_locations, dtype=np.int64).copy()
+        self.item_at = {int(l): i for i, l in enumerate(self.loc)}
+        self.empty = {r: set() for r in range(3)}
+        for l, r in self.zone_of.items():
+            if l not in self.item_at:
+                self.empty[r].add(l)
+        self.wrong_count = np.zeros(self.n_items, dtype=np.int32)
 
-        # Boş lokasyonlar (her sınıf için)
-        self.empty_locs: dict[str, list[int]] = {'A': [], 'B': [], 'C': []}
+        # Holt-Winters: ısınma dönemleriyle kurulur, her dönem sonunda güncellenir
+        self.forecaster = ItemForecaster()
+        self.forecaster.fit_all(self.demand, warmup_periods=warmup)
+        self._last_update = warmup - 1
 
-        # Config
-        self.o = DYNAMIC_STORAGE['min_periods_in_wrong_class_o']   # 2
-        self.u = DYNAMIC_STORAGE['min_periods_in_target_class_u']  # 1
-        self.max_suggestions = DYNAMIC_STORAGE['max_relocation_suggestions']  # 50
+    # ── yardımcılar ───────────────────────────────────────────────────
+    def current_class(self, i: int) -> int:
+        return self.zone_of[int(self.loc[i])]
 
-    # ──────────────────────────────────────────────────────────────
-    # BAŞLANGIÇ
-    # ──────────────────────────────────────────────────────────────
-
-    def initialize(self, item_locations: list[int],
-                   item_classes: list[str]) -> None:
-        """
-        Period 1 başlangıç durumunu ayarla.
-        item_locations: her item için başlangıç lokasyonu
-        item_classes: period 1 ABC sınıfları
-        """
-        self.item_states = {}
-        self.loc_to_item = {}
-
-        for item_id, (loc, cls) in enumerate(zip(item_locations, item_classes)):
-            self.item_states[item_id] = ItemState(
-                item_id=item_id,
-                location=loc,
-                current_class=cls,
-                forecast_class=cls,
-            )
-            self.loc_to_item[loc] = item_id
-
-        # Boş lokasyonlar
-        occupied = set(item_locations)
-        for cls, locs in self.location_classes.items():
-            self.empty_locs[cls] = [l for l in locs if l not in occupied]
-
-    # ──────────────────────────────────────────────────────────────
-    # PERİYOT ÇALIŞMASI
-    # ──────────────────────────────────────────────────────────────
-
-    def run_period(self, period: int, orders: list[Order],
-                   forecasts: list[float], algorithm) -> RelocationResult:
-        """
-        Bir periyodun relocation sürecini çalıştır.
-
-        period: test periyot numarası (1-9)
-        orders: bu periyodun siparişleri
-        forecasts: Holt-Winters'tan gelen item başına orderline tahmini
-        algorithm: BatchingRoutingAlgorithm (DEPSO veya RBRS-AE)
-
-        Döndürür: RelocationResult
-        """
-        result = RelocationResult(period=period)
-
-        # 1) Tahmin bazlı ABC sınıflandırması
-        forecast_classes = self._classify_by_forecast(forecasts)
-        self._update_class_tracking(forecast_classes)
-
-        # 2) Relocation öncelik listesi (yanlış sınıftaki itemler)
-        priority_list = self._build_priority_list()
-        if not priority_list:
-            return result
-
-        # 3) Mevcut travel distance (relokasyon olmadan)
-        td_before = self._compute_td(orders, algorithm)
-        result.travel_distance_before = td_before
-        td_comparison = td_before
-
-        # 4) Relocation önerileri test et
-        tested = 0
-        while priority_list and tested < self.max_suggestions:
-            # En yüksek öncelikli ascending item seç
-            asc_item = priority_list.pop(0)
-            target_cls = asc_item.forecast_class
-
-            # Exchange senaryosu seç (1→4 öncelik sırasıyla)
-            suggestion = self._find_exchange(asc_item, target_cls, priority_list)
-            if suggestion is None:
-                tested += 1
-                continue
-
-            # Relocation effort hesapla
-            effort = self._compute_effort(suggestion)
-
-            # Taşıma sonrası TD hesapla
-            self._apply_suggestion(suggestion)
-            td_after = self._compute_td(orders, algorithm)
-            tdr = td_comparison - td_after   # anlık azalma (negatif olabilir)
-
-            # Gelecek kazancı tahmin et (paper Section 5.3.5)
-            # Paper mantığı: karar future_gain + tdr > effort.
-            # Anlık tdr sıfır/negatif olsa bile gelecek kazanç effort'u geçebilir.
-            future_gain = self._estimate_future_gain(suggestion, forecasts)
-
-            if future_gain + tdr > effort:
-                # Kabul
-                td_comparison = td_after
-                result.num_accepted += 1
-                result.total_relocation_effort_LU += effort
-            else:
-                # Reddet → geri al (empty_locs dahil tam restore)
-                self._undo_suggestion(suggestion)
-                result.num_rejected += 1
-
-            tested += 1
-            result.num_suggestions_tested += 1
-
-        result.travel_distance_after = td_comparison
-        return result
-
-    # ──────────────────────────────────────────────────────────────
-    # SINIFLANDIRMA
-    # ──────────────────────────────────────────────────────────────
-
-    def _classify_by_forecast(self, forecasts: list[float]) -> dict[int, str]:
-        """Tahmin değerlerine göre ABC sınıfı ata."""
-        n = len(forecasts)
-        n_a = int(n * WAREHOUSE['class_A_pct'])
-        n_b = int(n * WAREHOUSE['class_B_pct'])
-
-        sorted_items = sorted(range(n), key=lambda i: -forecasts[i])
-        classes = {}
-        for rank, item_id in enumerate(sorted_items):
-            if rank < n_a:
-                classes[item_id] = 'A'
-            elif rank < n_a + n_b:
-                classes[item_id] = 'B'
-            else:
-                classes[item_id] = 'C'
-        return classes
-
-    def _update_class_tracking(self, forecast_classes: dict[int, str]) -> None:
-        """
-        İki BAĞIMSIZ sayacı güncelle (paper Section 5.3 eşikleri o ve u):
-
-        - periods_in_wrong_class (o): item kaç ardışık periyottur yanlış
-          sınıfta duruyor, yani current_class != forecast_class.
-        - periods_in_target_class (u): tahmin edilen HEDEF sınıf kaç ardışık
-          periyottur değişmeden aynı kaldı, yani tahmin ne kadar istikrarlı.
-
-        Bu ikisi farklı şeyi ölçer ve aynı anda pozitif olabilir. (Önceden
-        her biri diğerini sıfırlıyordu; bu yüzden `o AND u` koşulu asla
-        sağlanamıyor ve hiçbir relocation önerisi üretilemiyordu.)
-        """
-        for item_id, state in self.item_states.items():
-            fc = forecast_classes.get(item_id, state.current_class)
-            prev_fc = state.forecast_class
-            state.forecast_class = fc
-
-            # o sayacı: yanlış sınıfta geçen ardışık periyot
-            if fc != state.current_class:
-                state.periods_in_wrong_class += 1
-            else:
-                state.periods_in_wrong_class = 0
-
-            # u sayacı: hedef sınıf tahmininin ardışık istikrar süresi
-            if fc == prev_fc:
-                state.periods_in_target_class += 1
-            else:
-                state.periods_in_target_class = 1
-
-    def _build_priority_list(self) -> list[ItemState]:
-        """
-        Relocation öncelik listesi: yanlış sınıfta >= o periyot olan itemler.
-        Öncelik: forecast_class ile current_class farkı büyük olanlar önce.
-        """
-        class_order = {'A': 0, 'B': 1, 'C': 2}
-
-        candidates = []
-        for state in self.item_states.values():
-            if (state.periods_in_wrong_class >= self.o and
-                    state.periods_in_target_class >= 0):
-                # Ascending (C→B, C→A, B→A) veya descending
-                gap = (class_order[state.current_class] -
-                       class_order[state.forecast_class])
-                if gap > 0:  # ascending: daha üst sınıfa taşınmalı
-                    candidates.append((gap, state))
-
-        # Gap büyüklüğüne göre sırala (en büyük gap önce)
-        candidates.sort(key=lambda x: -x[0])
-        return [state for _, state in candidates]
-
-    # ──────────────────────────────────────────────────────────────
-    # EXCHANGE SENARYO
-    # ──────────────────────────────────────────────────────────────
-
-    def _find_exchange(self, asc_item: ItemState, target_cls: str,
-                       priority_list: list[ItemState]) -> dict | None:
-        """
-        4 exchange senaryosundan en uygununu bul.
-        Senaryo 1: Boş lokasyona taşı (en basit)
-        Senaryo 2: Descending item ile doğrudan takas
-        Senaryo 3: Dolaylı takas (üçüncü sınıf boş yer)
-        Senaryo 4: Üç item rotasyonu
-        """
-        # Senaryo 1: boş lokasyon var mı?
-        if self.empty_locs.get(target_cls):
-            target_loc = self.empty_locs[target_cls][0]
-            return {
-                'type': 1,
-                'asc_item': asc_item,
-                'asc_new_loc': target_loc,
-                'desc_item': None,
-                'desc_new_loc': None,
-            }
-
-        # Senaryo 2: priority listesinde descending item var mı?
-        asc_cls = asc_item.current_class
-        for desc in priority_list:
-            if (desc.current_class == target_cls and
-                    desc.forecast_class == asc_cls):
-                return {
-                    'type': 2,
-                    'asc_item': asc_item,
-                    'asc_new_loc': desc.location,
-                    'desc_item': desc,
-                    'desc_new_loc': asc_item.location,
-                }
-
-        # Senaryo 3: target sınıfından bir item boş yere taşınabilir mi?
-        third_cls = 'C' if target_cls in ('A', 'B') else 'B'
-        if self.empty_locs.get(third_cls):
-            # target sınıfında en düşük öncelikli item'i bul
-            target_items = [s for s in self.item_states.values()
-                            if s.current_class == target_cls]
-            if target_items:
-                # Depot'a en yakın olanı seç (paper: en yakın)
-                bridge = min(target_items,
-                             key=lambda s: self.wh.dist_m(self.wh.DEPOT, s.location))
-                bridge_new_loc = self.empty_locs[third_cls][0]
-                return {
-                    'type': 3,
-                    'asc_item': asc_item,
-                    'asc_new_loc': bridge.location,
-                    'desc_item': bridge,
-                    'desc_new_loc': bridge_new_loc,
-                }
-
-        return None  # Hiçbir senaryo uygun değil
-
-    # ──────────────────────────────────────────────────────────────
-    # EFFORT HESABI
-    # ──────────────────────────────────────────────────────────────
-
-    def _compute_effort(self, suggestion: dict) -> float:
-        """
-        E_total = E_dis + E_phy + E_adm  (her item için)
-        E_dis = depot → current → target mesafesi
-        """
-        df = self.wh.dist_m
-        depot = self.wh.DEPOT
-        total = 0.0
-
-        # Ascending item
-        asc = suggestion['asc_item']
-        e_dis_asc = df(depot, asc.location) + df(asc.location, suggestion['asc_new_loc'])
-        total += e_dis_asc + self.E_PHY + self.E_ADM
-
-        # Descending item (varsa)
-        desc = suggestion.get('desc_item')
-        if desc and suggestion.get('desc_new_loc'):
-            e_dis_desc = df(depot, desc.location) + df(desc.location, suggestion['desc_new_loc'])
-            total += e_dis_desc + self.E_PHY + self.E_ADM
-
-        return total
-
-    # ──────────────────────────────────────────────────────────────
-    # APPLY / UNDO
-    # ──────────────────────────────────────────────────────────────
-
-    def _apply_suggestion(self, suggestion: dict) -> None:
-        """Relocation önerisini uygula (item lokasyonlarını güncelle)."""
-        asc = suggestion['asc_item']
-        old_loc = asc.location
-        new_loc = suggestion['asc_new_loc']
-        target_cls = asc.forecast_class
-
-        # Undo için orijinal state'i kaydet
-        suggestion['_orig_asc_loc'] = old_loc
-        suggestion['_orig_asc_cls'] = asc.current_class
-
-        # Ascending item'ı taşı
-        self.loc_to_item.pop(old_loc, None)
-        self.loc_to_item[new_loc] = asc.item_id
-        if new_loc in self.empty_locs.get(target_cls, []):
-            self.empty_locs[target_cls].remove(new_loc)
-        self.empty_locs.setdefault(asc.current_class, []).append(old_loc)
-        asc.location = new_loc
-        asc.current_class = target_cls
-
-        # Descending item'ı taşı (varsa)
-        desc = suggestion.get('desc_item')
-        if desc and suggestion.get('desc_new_loc'):
-            old_d = desc.location
-            new_d = suggestion['desc_new_loc']
-            desc_cls = desc.forecast_class
-            suggestion['_orig_desc_loc'] = old_d
-            suggestion['_orig_desc_cls'] = desc.current_class
-            self.loc_to_item.pop(old_d, None)
-            self.loc_to_item[new_d] = desc.item_id
-            if new_d in self.empty_locs.get(desc_cls, []):
-                self.empty_locs[desc_cls].remove(new_d)
-            self.empty_locs.setdefault(desc.current_class, []).append(old_d)
-            desc.location = new_d
-            desc.current_class = desc_cls
-
-    def _undo_suggestion(self, suggestion: dict) -> None:
-        """Relocation önerisini geri al — loc_to_item ve empty_locs tam restore."""
-        asc      = suggestion['asc_item']
-        new_loc  = asc.location                          # apply sonrası konum
-        old_loc  = suggestion.get('_orig_asc_loc', new_loc)
-        orig_cls = suggestion.get('_orig_asc_cls', asc.current_class)
-        cur_cls  = asc.current_class                     # apply sonrası sınıf
-
-        # loc_to_item geri al
-        self.loc_to_item.pop(new_loc, None)
-        self.loc_to_item[old_loc] = asc.item_id
-
-        # empty_locs geri al
-        if new_loc not in self.empty_locs.get(cur_cls, []):
-            self.empty_locs.setdefault(cur_cls, []).append(new_loc)
-        if old_loc in self.empty_locs.get(orig_cls, []):
-            self.empty_locs[orig_cls].remove(old_loc)
-
-        asc.location      = old_loc
-        asc.current_class = orig_cls
-
-        # Descending item (varsa)
-        desc = suggestion.get('desc_item')
-        if desc and '_orig_desc_loc' in suggestion:
-            d_new      = desc.location
-            d_old      = suggestion['_orig_desc_loc']
-            d_orig_cls = suggestion['_orig_desc_cls']
-            d_cur_cls  = desc.current_class
-
-            self.loc_to_item.pop(d_new, None)
-            self.loc_to_item[d_old] = desc.item_id
-
-            if d_new not in self.empty_locs.get(d_cur_cls, []):
-                self.empty_locs.setdefault(d_cur_cls, []).append(d_new)
-            if d_old in self.empty_locs.get(d_orig_cls, []):
-                self.empty_locs[d_orig_cls].remove(d_old)
-
-            desc.location      = d_old
-            desc.current_class = d_orig_cls
-
-    # ──────────────────────────────────────────────────────────────
-    # TRAVEL DISTANCE HESABI
-    # ──────────────────────────────────────────────────────────────
-
-    def _compute_td(self, orders: list[Order], algorithm) -> float:
-        """
-        Mevcut item lokasyonlarıyla travel distance hesapla.
-        NN+2opt kullanılır — QA önerisi: pure NN yerine daha doğru tahmin.
-        """
-        from algorithms.routing.two_opt import nn_then_2opt
-        from algorithms.batching.first_fit import first_fit_batching
-
-        updated_orders = self._update_order_locations(orders)
-        batches = first_fit_batching(updated_orders)
-        total = 0.0
-        for b in batches:
-            _, dist = nn_then_2opt(b.locations, self.wh)
-            total += dist
-        return total
-
-    def _update_order_locations(self, orders: list[Order]) -> list[Order]:
-        """Her orderline'ın lokasyonunu mevcut item state'e göre güncelle."""
-        from copy import deepcopy
-        from core.data_loader import OrderLine
-
-        updated = []
+    def remap(self, orders: list[Order]) -> list[Order]:
+        """Siparişlerin lokasyonlarını ürünlerin ŞU ANKİ yerine göre güncelle."""
+        out = []
         for o in orders:
-            new_ols = []
-            for ol in o.orderlines:
-                state = self.item_states.get(ol.item)
-                new_loc = state.location if state else ol.location
-                new_ols.append(OrderLine(
-                    item=ol.item, quantity=ol.quantity,
-                    location=new_loc, weight=ol.weight
-                ))
-            from core.data_loader import Order as Ord
-            new_o = Ord(order_id=o.order_id, num_orderlines=o.num_orderlines,
-                        total_weight=o.total_weight, orderlines=new_ols)
-            updated.append(new_o)
-        return updated
+            lines = [OrderLine(item=l.item, quantity=l.quantity,
+                               location=int(self.loc[l.item]), weight=l.weight)
+                     for l in o.orderlines]
+            out.append(Order(order_id=o.order_id, num_orderlines=o.num_orderlines,
+                             total_weight=o.total_weight, orderlines=lines))
+        return out
 
-    def _estimate_future_gain(self, suggestion: dict,
-                              forecasts: list[float]) -> float:
+    def _advance_forecaster(self, period: int) -> None:
+        """Tahminciyi `period` dahil gerçekleşen talebe kadar ilerlet."""
+        for t in range(self._last_update + 1, period + 1):
+            self.forecaster.update_all(self.demand[:, t])
+        self._last_update = max(self._last_update, period)
+
+    # ══════════════════════════════════════════════════════════════════
+    # DÖNEM SONU
+    # ══════════════════════════════════════════════════════════════════
+
+    def run_period(self, period: int, period_orders: list[list[Order]],
+                   batch_fn: BatchFn | None = None,
+                   batches: list[list[list[Order]]] | None = None,
+                   tdr_scale: float = 1.0) -> PeriodRelocation:
         """
-        Paper Section 5.3.5: gelecek periyot kazancını tahmin et.
-        Basit yaklaşım: taşınan item'ın mevcut + hedef sınıf
-        depot mesafesi farkı × tahmini orderline sayısı
+        period: biten dönemin (t-1) mutlak indeksi.
+        period_orders: o dönemin siparişleri, alt dönemlere bölünmüş.
+        batches: alt dönem başına algoritmanın grupları (varsa yeniden
+            gruplanmaz). Yoksa batch_fn ile bir kez gruplanır.
+        tdr_scale: dönemin yalnızca bir kısmı çözüldüyse (hızlı deneme)
+            Tdr'yi tüm döneme ölçekler; kabul kararında kullanılır.
         """
-        asc = suggestion['asc_item']
-        df = self.wh.dist_m
+        res = PeriodRelocation(period=period)
+        self._advance_forecaster(period)
+
+        realized = self.demand[:, period]
+        cls_now, lim_now = abc_with_limits(realized, self.class_pct)
+        horizon = [np.asarray(self.forecaster.predict_all(tau), dtype=float)
+                   for tau in range(1, self.U_for + 1)]
+        fc = [abc_with_limits(v, self.class_pct) for v in horizon]
+
+        cur = np.array([self.current_class(i) for i in range(self.n_items)])
+        wrong = cls_now != cur
+        self.wrong_count = np.where(wrong, self.wrong_count + 1, 0)
+
+        # 5.3.1-5.3.2 adaylar ve öncelik
+        cand = []
+        for i in np.flatnonzero(self.wrong_count >= self.o):
+            target = int(cls_now[i])
+            u_tar = 0
+            for cls_r, _ in fc:
+                if cls_r[i] == target:
+                    u_tar += 1
+                else:
+                    break
+            if u_tar < self.u:
+                continue
+            key = relevant_limit(int(cur[i]), target)
+            pv = sum(abs(horizon[r][i] - fc[r][1][key]) for r in range(u_tar))
+            cand.append({'item': int(i), 'cur': int(cur[i]), 'target': target,
+                         'pv': float(pv), 'u_tar': u_tar, 'key': key})
+        cand.sort(key=lambda c: (-c['pv'], c['item']))
+        res.candidates = len(cand)
+
+        # 5.3.3 yer kontrolü
+        cand = self._feasible(cand)
+
+        # Td_com: dönemin siparişleri, bir kez gruplanmış, mevcut yerleşimle
+        if batches is None:
+            if batch_fn is None:
+                raise ValueError("batch_fn ya da batches verilmeli")
+            batches = [batch_fn(self.remap(sub), self.wh) for sub in period_orders if sub]
+        groups = [[{l.item for o in b for l in o.orderlines} for b in sub] for sub in batches]
+        groups = [g for sub in groups for g in sub]
+        routes = RouteCache(self.wh)
+        td = [routes.distance([int(self.loc[i]) for i in g]) for g in groups]
+        groups_of_item: dict[int, list[int]] = {}
+        for gi, g in enumerate(groups):
+            for i in g:
+                groups_of_item.setdefault(i, []).append(gi)
+        td_com = sum(td)
+        res.td_before_LU = td_com
+
+        # 5.3.4-5.3.5 önerileri sırayla dene
+        tested = 0
+        while cand and tested < self.max_suggestions:
+            asc_idx = next((k for k, c in enumerate(cand) if c['target'] < c['cur']), None)
+            if asc_idx is None:
+                break
+            asc = cand.pop(asc_idx)
+            sug = self._build_suggestion(asc, cand)
+            tested += 1
+            if sug is None:
+                res.suggestions.append(Suggestion(0, [], reason='uygun takas yok'))
+                continue
+            for mv in sug.moves:                     # ilgili ürünler listeden çıkar
+                cand[:] = [c for c in cand if c['item'] != mv.item]
+
+            sug.effort = sum(self.wh.distance(mv.src, mv.dst) + self.E_PHY + self.E_ADM
+                             for mv in sug.moves)
+            affected = sorted({gi for mv in sug.moves for gi in groups_of_item.get(mv.item, [])})
+            new_loc = {mv.item: mv.dst for mv in sug.moves}
+            new_td = {gi: routes.distance([new_loc.get(i, int(self.loc[i])) for i in groups[gi]])
+                      for gi in affected}
+            td_rel = td_com - sum(td[gi] for gi in affected) + sum(new_td.values())
+            sug.tdr = td_com - td_rel
+
+            if sug.tdr <= 0:
+                sug.reason = 'bu dönemde kazanç yok'
+            else:
+                d_prev = abs(realized[asc['item']] - lim_now[asc['key']])
+                rel_prev = 100.0 * d_prev / lim_now[asc['key']] if lim_now[asc['key']] > 0 else 0.0
+                if rel_prev <= 0:
+                    sug.reason = 'göreli uzaklık sıfır'
+                else:
+                    lam = sug.tdr * tdr_scale / rel_prev
+                    gain = 0.0
+                    for r in range(asc['u_tar']):
+                        lim_r = fc[r][1][asc['key']]
+                        if lim_r > 0:
+                            gain += lam * 100.0 * abs(horizon[r][asc['item']] - lim_r) / lim_r
+                    sug.future_gain = gain
+                    if gain > sug.effort:
+                        sug.accepted = True
+                        sug.reason = 'kabul'
+                        self._apply(sug)
+                        for gi, v in new_td.items():
+                            td[gi] = v
+                        td_com = td_rel
+                        res.accepted += 1
+                        res.effort_LU += sug.effort
+                    else:
+                        sug.reason = 'kazanç < efor'
+            res.suggestions.append(sug)
+
+        res.tested = tested
+        res.td_after_LU = td_com
+        return res
+
+    # ── 5.3.3 ─────────────────────────────────────────────────────────
+    def _feasible(self, cand: list[dict]) -> list[dict]:
+        cand = list(cand)
+        while True:
+            fv = {}
+            for r in range(3):
+                leaving = sum(1 for c in cand if c['cur'] == r)
+                entering = sum(1 for c in cand if c['target'] == r)
+                fv[r] = len(self.empty[r]) + leaving - entering
+            worst = min(fv, key=lambda r: fv[r])
+            if fv[worst] >= 0:
+                return cand
+            entering = sorted((c for c in cand if c['target'] == worst), key=lambda c: c['pv'])
+            drop = {c['item'] for c in entering[:-fv[worst]]}
+            cand = [c for c in cand if c['item'] not in drop]
+
+    # ── 5.3.4 ─────────────────────────────────────────────────────────
+    def _pick_desc(self, cand, now_in: int, goes_to: int):
+        pool = [c for c in cand if c['cur'] == now_in and c['target'] == goes_to]
+        if not pool:
+            return None
         depot = self.wh.DEPOT
+        return max(pool, key=lambda c: (c['pv'], -self.wh.distance(depot, int(self.loc[c['item']]))))
 
-        # Mevcut lokasyon vs hedef lokasyon depot mesafesi
-        cur_dist = df(depot, suggestion.get('_orig_asc_loc', asc.location))
-        new_dist = df(depot, suggestion['asc_new_loc'])
-        dist_saving = cur_dist - new_dist
+    def _nearest_empty(self, r: int):
+        if not self.empty[r]:
+            return None
+        depot = self.wh.DEPOT
+        return min(self.empty[r], key=lambda l: (self.wh.distance(depot, l), l))
 
-        # Tahmini orderline sayısı
-        forecast_ol = forecasts[asc.item_id] if asc.item_id < len(forecasts) else 1.0
+    def _build_suggestion(self, asc: dict, cand: list[dict]) -> Suggestion | None:
+        i, C, T = asc['item'], asc['cur'], asc['target']
+        X = 3 - C - T                              # üçüncü sınıf
+        src = int(self.loc[i])
+        mv = lambda item, dst, a, b: Move(item, int(self.loc[item]), int(dst), RANK_CLASS[a], RANK_CLASS[b])
 
-        # Her orderline için yaklaşık 2× tur (gidip dön)
-        gain = max(0.0, dist_saving * forecast_ol * 2)
-        return gain
+        # 1: hedef sınıfta boş yer (kapıya en yakın boş yer)
+        e = self._nearest_empty(T)
+        if e is not None:
+            return Suggestion(1, [mv(i, e, C, T)])
+
+        options = []
+        d2 = self._pick_desc(cand, T, C)
+        if d2 is not None:
+            j = d2['item']
+            options.append(Suggestion(2, [mv(i, self.loc[j], C, T), mv(j, src, T, C)]))
+        d3 = self._pick_desc(cand, T, X)
+        e3 = self._nearest_empty(X)
+        if d3 is not None and e3 is not None:
+            j = d3['item']
+            options.append(Suggestion(3, [mv(i, self.loc[j], C, T), mv(j, e3, T, X)]))
+        if options:
+            return self.rng.choice(options)
+
+        # 4: i → T (j1'in yeri), j1 → X (j2'nin yeri), j2 → C (i'nin yeri)
+        d4a = self._pick_desc(cand, T, X)
+        d4b = self._pick_desc(cand, X, C)
+        if d4a is not None and d4b is not None:
+            j1, j2 = d4a['item'], d4b['item']
+            return Suggestion(4, [mv(i, self.loc[j1], C, T), mv(j1, self.loc[j2], T, X),
+                                  mv(j2, src, X, C)])
+        return None
+
+    def _apply(self, sug: Suggestion) -> None:
+        srcs = {mv.src for mv in sug.moves}
+        dsts = {mv.dst for mv in sug.moves}
+        for l in srcs - dsts:                      # boşalan yerler
+            self.item_at.pop(l, None)
+            self.empty[self.zone_of[l]].add(l)
+        for mv in sug.moves:
+            self.empty[self.zone_of[mv.dst]].discard(mv.dst)
+            self.loc[mv.item] = mv.dst
+            self.item_at[mv.dst] = mv.item
+            self.wrong_count[mv.item] = 0
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# TEST
+# YAKLAŞIMIN DOĞRULANMASI
 # ════════════════════════════════════════════════════════════════════════════
 
-if __name__ == "__main__":
-    import numpy as np
-    from core.data_loader import DataLoader
-    from core.warehouse import Warehouse
-    from core.forecasting import ItemForecaster
-    from algorithms.depso import DEPSO
+def validate_approximation(reloc: DynamicRelocation, period_orders: list[list[Order]],
+                           solve_fn: Callable[[list[Order], object], tuple[float, list[list[Order]]]],
+                           suggestions: list[Suggestion]) -> list[dict]:
+    """
+    Her öneri için bu dönemdeki mesafe kazancını (Tdr) iki yolla hesaplar,
+    ikisi de AYNI başlangıç yerleşiminden:
 
-    loader = DataLoader()
-    wh     = Warehouse()
+      yaklaşık: algoritmanın grupları sabit, yalnızca etkilenen grupların
+                rotası yeniden hesaplanır (bu modülün yöntemi)
+      tam:      taşıma uygulanmış yerleşimle algoritma dönemi baştan çözer
+                (makaledeki yöntem)
 
-    print("=" * 60)
-    print("Dynamic Storage Relocation Test")
-    print("=" * 60)
-
-    # Item metadata
-    items = loader.load_items()
-    item_locations = [it.initial_location for it in items]
-    item_classes   = [it.class_period1    for it in items]
-
-    # Lokasyon sınıfları
-    loc_classes = loader.load_location_classes()
-
-    # Relocation sistemi
-    reloc = DynamicRelocation(wh, loc_classes)
-    reloc.initialize(item_locations, item_classes)
-
-    # Holt-Winters
-    demand = loader.load_scenario_demand(1)
-    forecaster = ItemForecaster()
-    forecaster.fit_all(demand, warmup_periods=12)
-
-    # DEPSO (küçük instance ile test)
-    algo = DEPSO(num_iterations=50, seed=42)
-
-    print("\nTest periyotları (küçük instance — 30 sipariş):")
-    print(f"{'Periyot':<8} {'Test Sug':>8} {'Kabul':>6} {'TD Önce':>10} "
-          f"{'TD Sonra':>10} {'Azalma%':>8} {'Effort%':>8} {'Net%':>6}")
-    print("-" * 70)
-
-    total_results = []
-    for period in range(1, 4):  # Sadece 3 periyot (hızlı test)
-        orders = loader.load_orders(1, period, 1).orders[:30]
-        forecasts = forecaster.predict_all(tau=1)
-
-        result = reloc.run_period(period, orders, forecasts, algo)
-
-        # Forecaster güncelle
-        forecaster.update_all(demand[:, 11 + period])  # gerçek talep
-
-        total_results.append(result)
-        print(f"{period:<8} {result.num_suggestions_tested:>8} "
-              f"{result.num_accepted:>6} "
-              f"{result.travel_distance_before:>10.1f} "
-              f"{result.travel_distance_after:>10.1f} "
-              f"{result.reduction_pct:>8.2f}% "
-              f"{result.relocation_effort_pct:>8.2f}% "
-              f"{result.net_improvement_pct:>6.2f}%")
-
-    # Ortalama
-    avg_reduction = sum(r.reduction_pct for r in total_results) / len(total_results)
-    avg_effort    = sum(r.relocation_effort_pct for r in total_results) / len(total_results)
-    avg_net       = sum(r.net_improvement_pct for r in total_results) / len(total_results)
-    print("-" * 70)
-    print(f"{'Ortalama':<8} {'':>8} {'':>6} {'':>10} {'':>10} "
-          f"{avg_reduction:>8.2f}% {avg_effort:>8.2f}% {avg_net:>6.2f}%")
-
-    print()
-    print("Paper hedefleri (Senaryo 1, 9 periyot):")
-    print("  Travel distance azalma: ~15%")
-    print("  Relocation effort:      ~2.79%")
-    print("  Net iyileşme:           ~12.23%")
+    solve_fn(orders, wh) -> (toplam mesafe, gruplar). Yerleşim değişmez.
+    """
+    wh = reloc.wh
+    base = [solve_fn(reloc.remap(sub), wh) for sub in period_orders if sub]
+    base_total = sum(d for d, _ in base)
+    groups = [{l.item for o in g for l in o.orderlines} for _, gs in base for g in gs]
+    routes = RouteCache(wh)
+    out = []
+    for sug in suggestions:
+        if not sug.moves:
+            continue
+        new_loc = {mv.item: mv.dst for mv in sug.moves}
+        approx = 0.0
+        for g in groups:
+            if g & new_loc.keys():
+                before = routes.distance([int(reloc.loc[i]) for i in g])
+                after = routes.distance([new_loc.get(i, int(reloc.loc[i])) for i in g])
+                approx += before - after
+        saved = reloc.loc.copy()
+        for mv in sug.moves:
+            reloc.loc[mv.item] = mv.dst
+        full_total = sum(solve_fn(reloc.remap(sub), wh)[0] for sub in period_orders if sub)
+        reloc.loc[:] = saved
+        out.append({'scenario': sug.scenario, 'tdr_approx': round(approx, 2),
+                    'tdr_full': round(base_total - full_total, 2)})
+    return out

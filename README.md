@@ -27,11 +27,11 @@ Kübler, Glock, Bauernhansl (2020) reproduksiyonu (DEPSO) + RBRS-AE + ALNS.
 | `algorithms/rbrs_ae.py` | ✅ Regret tabanı düzeltildi |
 | `algorithms/alns.py` | ✅ ALNS — formülasyon: `docs/ALNS_formulasyon.md` |
 | `algorithms/routing/route_cache.py` | ✅ Ortak rota servisi (tüm algoritmalar) |
-| `algorithms/relocation.py` | ⚠️ Makale 5.3'e göre yeniden yazılacak (denetim K1, K2) |
+| `algorithms/relocation.py` | ✅ Makale 5.3'e göre yeniden yazıldı — `docs/RELOCATION.md` |
 | `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
 | `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
 | `run_batch.py` | ✅ 35 senaryo koşucu (5 algoritma, paralel) |
-| `tests/` | ✅ **149 test**, tamamı geçiyor |
+| `tests/` | ✅ **157 test**, tamamı geçiyor |
 
 ---
 
@@ -150,13 +150,25 @@ Ayrıntılar ve grup kararı bekleyen değerler: `docs/URETICI.md`.
 
 ---
 
+## Dinamik yer ataması (relocation)
+
+```bash
+python run_dynamic.py --source kubler --scenario 1 --algo DEPSO --jobs 16
+python run_dynamic.py --source generated --size 10000 --blocks 2 --fill 0.7 --dynamics yuksek --algo ALNS --jobs 16
+python validate_relocation.py --algo RBRS-AE      # yaklaşımın doğrulanması
+```
+
+Ayrıntılar, makaleden sapma ve ilk sonuçlar: `docs/RELOCATION.md`.
+
+---
+
 ## Testler
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-**149 test, tamamı geçiyor.**
+**157 test, tamamı geçiyor.**
 
 | Dosya | Kapsam |
 |---|---|
@@ -167,7 +179,7 @@ python -m pytest tests/ -v
 | `test_parametric_warehouse.py` | 1/2/3 bloklu depo geometrisi, algoritmalar Kübler dışı düzende |
 | `test_generator.py` | Üretici: belirlilik, doluluk, yerleşim, siparişler, dinamiklik |
 | `test_s_shape_traversal.py` | Gerçek S-shape traversal doğrulaması |
-| `test_relocation.py` | Sayaç bağımsızlığı, öneri üretimi |
+| `test_relocation.py` | Relocation: sınıf sınırları, 4 takas senaryosu, yer kontrolü, uçtan uca değişmezler |
 | `test_depso.py`, `test_batching.py`, `test_warehouse.py`, `test_smoke.py` | Temel modül testleri |
 
 ---
@@ -191,7 +203,7 @@ warehouse_optimization/
 ├── benchmarks/
 ├── ui/
 │   └── pages/
-├── tests/                 # 149 test
+├── tests/                 # 157 test
 ├── run_batch.py           # tek deney koşucusu (35 senaryo)
 ├── regen_35.py            # batch sonuçlarından rapor üretir
 ├── docs/                  # denetim raporları ve notlar
@@ -202,5 +214,5 @@ warehouse_optimization/
 ## Kaynaklar
 
 Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
-`tests/` (149 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
+`tests/` (157 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
 `master`'a birleştirildi.
