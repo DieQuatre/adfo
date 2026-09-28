@@ -17,6 +17,7 @@ from benchmarks.sop import SOP
 from benchmarks.fcfs import FCFS
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from config import RBRS_AE as RBRS_CFG
 from ui.components.warehouse_plot import plot_batch_routes, plot_convergence
 
 st.set_page_config(page_title="Single Run", page_icon="🎯", layout="wide")
@@ -57,10 +58,10 @@ with st.sidebar:
         n_part = st.slider("Particles", 2, 10, 5)
     elif algo_name == "RBRS-AE":
         st.subheader("RBRS-AE Parameters")
-        r_iter  = st.slider("Max iterations", 20, 200, 100)
-        r_noimp = st.slider("No-improvement limit", 5, 30, 15)
-        r_shift = st.slider("Shift attempts", 20, 200, 50)
-        r_swap  = st.slider("Swap attempts", 20, 200, 50)
+        r_iter  = st.slider("Max iterations", 20, 200, RBRS_CFG["max_iterations"])
+        r_noimp = st.slider("No-improvement limit", 5, 30, RBRS_CFG["max_no_improvement"])
+        r_shift = st.slider("Shift attempts", 20, 200, RBRS_CFG["shift_attempts"])
+        r_swap  = st.slider("Swap attempts", 20, 200, RBRS_CFG["swap_attempts"])
 
 # ── Problem info ──────────────────────────────────────────────────
 orders = loader.load_orders(scenario, period, subperiod).orders[:max_ord]

@@ -20,6 +20,7 @@ from benchmarks.sop import SOP
 from benchmarks.fcfs import FCFS
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from config import RBRS_AE as RBRS_CFG
 
 st.set_page_config(page_title="Comparison", page_icon="⚖️", layout="wide")
 st.title("⚖️ Algorithm Comparison")
@@ -48,10 +49,10 @@ with st.sidebar:
 
     st.divider()
     st.header("🔧 RBRS-AE")
-    r_iter  = st.slider("Max iterations", 20, 200, 100)
-    r_noimp = st.slider("No-improvement limit", 5, 30, 15)
-    r_shift = st.slider("Shift attempts", 20, 200, 50)
-    r_swap  = st.slider("Swap attempts", 20, 200, 50)
+    r_iter  = st.slider("Max iterations", 20, 200, RBRS_CFG["max_iterations"])
+    r_noimp = st.slider("No-improvement limit", 5, 30, RBRS_CFG["max_no_improvement"])
+    r_shift = st.slider("Shift attempts", 20, 200, RBRS_CFG["shift_attempts"])
+    r_swap  = st.slider("Swap attempts", 20, 200, RBRS_CFG["swap_attempts"])
 
     seed = st.number_input("Seed", value=42)
 

@@ -163,9 +163,7 @@ def run_one_scenario(scenario: dict, n_instances: int,
             ('FCFS',    FCFS()),
             ('DEPSO',   DEPSO(num_iterations=depso_iter,
                               num_particles=5, seed=inst_seed)),
-            ('RBRS-AE', RBRS_AE(max_iterations=100,
-                                shift_attempts=150, swap_attempts=150,
-                                seed=inst_seed)),
+            ('RBRS-AE', RBRS_AE(seed=inst_seed)),   # ayarlar config.RBRS_AE
         ]
 
         line_parts = []
