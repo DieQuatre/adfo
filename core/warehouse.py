@@ -315,6 +315,24 @@ class Warehouse:
             return self.distance(loc_a, loc_b)
         return float(self._matrix[ia, ib])
 
+    def submatrix(self, loc_ids: list[int]) -> 'list[list[float]] | None':
+        """
+        Verilen lokasyonlar için mesafe alt-matrisi (iç içe Python listesi).
+
+        Rota sezgisellerinin iç döngüsünde dist_m() çağrısı yerine liste
+        indekslemesi kullanmak için. Değerler dist_m() ile birebir aynıdır
+        (aynı float32 matrisinden okunur). Matris yoksa ya da lokasyonlardan
+        biri matriste değilse None döner; çağıran eski yola düşer.
+        """
+        if self._matrix is None:
+            return None
+        idx = self._matrix_idx
+        try:
+            rows = [idx[l] for l in loc_ids]
+        except KeyError:
+            return None
+        return self._matrix[np.ix_(rows, rows)].tolist()
+
     # ────────────────────────────────────────────────────────────
     # SINIFLANDIRMA YARDIMCISI
     # ────────────────────────────────────────────────────────────

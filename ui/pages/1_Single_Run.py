@@ -17,7 +17,8 @@ from benchmarks.sop import SOP
 from benchmarks.fcfs import FCFS
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
-from config import RBRS_AE as RBRS_CFG
+from config import RBRS_AE as RBRS_CFG, ALNS as ALNS_CFG
+from algorithms.alns import ALNS
 from ui.components.warehouse_plot import plot_batch_routes, plot_convergence
 
 st.set_page_config(page_title="Single Run", page_icon="🎯", layout="wide")
@@ -48,7 +49,7 @@ with st.sidebar:
 
     st.divider()
     st.header("Algorithm")
-    algo_name = st.radio("Select", ["SOP", "FCFS", "DEPSO", "RBRS-AE"])
+    algo_name = st.radio("Select", ["SOP", "FCFS", "DEPSO", "RBRS-AE", "ALNS"])
 
     seed = st.number_input("Seed", value=42)
 
@@ -62,6 +63,9 @@ with st.sidebar:
         r_noimp = st.slider("No-improvement limit", 5, 30, RBRS_CFG["max_no_improvement"])
         r_shift = st.slider("Shift attempts", 20, 200, RBRS_CFG["shift_attempts"])
         r_swap  = st.slider("Swap attempts", 20, 200, RBRS_CFG["swap_attempts"])
+    elif algo_name == "ALNS":
+        st.subheader("ALNS Parameters")
+        a_iter = st.slider("Iterations", 50, 1000, ALNS_CFG["max_iterations"])
 
 # ── Problem info ──────────────────────────────────────────────────
 orders = loader.load_orders(scenario, period, subperiod).orders[:max_ord]
@@ -82,6 +86,8 @@ if st.button("🚀 Run", type="primary", use_container_width=True):
         algo = FCFS()
     elif algo_name == "DEPSO":
         algo = DEPSO(num_iterations=n_iter, num_particles=n_part, seed=int(seed))
+    elif algo_name == "ALNS":
+        algo = ALNS(max_iterations=a_iter, seed=int(seed))
     else:
         algo = RBRS_AE(max_iterations=r_iter, max_no_improvement=r_noimp,
                        shift_attempts=r_shift, swap_attempts=r_swap, seed=int(seed))

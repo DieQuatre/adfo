@@ -124,3 +124,16 @@ def test_run_batch_does_not_override_rbrs_settings():
     call = src[src.index("RBRS_AE("):src.index(")", src.index("RBRS_AE("))]
     for key in ("max_iterations", "max_no_improvement", "shift_attempts", "swap_attempts"):
         assert key not in call, f"run_batch.py RBRS-AE ayarını ({key}) eziyor"
+
+
+# ── ALNS ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("seed", [3, 8])
+def test_alns_consistent(wh, pool, seed):
+    from algorithms.alns import ALNS
+    orders = _sample(pool, 40, seed)
+    sol = ALNS(max_iterations=60, seed=seed).solve(orders, wh)
+    assert_consistent(sol, orders, wh)
+    ref = RouteCache(wh)
+    for b in sol.batches:
+        assert b.travel_distance == pytest.approx(ref.distance(b.locations), abs=1e-6)

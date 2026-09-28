@@ -33,6 +33,7 @@ def savings_batching(
     orders: list[Order],
     warehouse,
     capacity: float = None,
+    verbose: bool = False,
 ) -> list[Batch]:
     """
     Clarke-Wright Savings ile batching.
@@ -51,14 +52,16 @@ def savings_batching(
         return []
 
     # Adım 1: Her sipariş için tek başına travel distance
-    print(f"  [Savings] {n} sipariş için tek başına TD hesaplanıyor...")
+    if verbose:
+        print(f"  [Savings] {n} sipariş için tek başına TD hesaplanıyor...")
     individual_td = []
     for i, o in enumerate(orders):
         _, dist = nn_then_2opt(o.locations, warehouse)
         individual_td.append(dist)
 
     # Adım 2: Sipariş çiftleri için savings (kapasiteye uyanlar)
-    print(f"  [Savings] {n*(n-1)//2} çift için savings hesaplanıyor...")
+    if verbose:
+        print(f"  [Savings] {n*(n-1)//2} çift için savings hesaplanıyor...")
     savings_list = []  # (sav, i, j)
     for i in range(n):
         for j in range(i + 1, n):

@@ -48,6 +48,7 @@ for r in results:
         continue
     depso = r['stats']['DEPSO']
     rbrs  = r['stats'].get('RBRS-AE', {})
+    alns  = r['stats'].get('ALNS', {})
     paper = r.get('paper_vs_sop', 0)
     diff  = round(depso['vs_sop_mean'] - paper, 2)
 
@@ -59,10 +60,12 @@ for r in results:
         'A_maxol':             a,
         'DEPSO vs SOP':        round(depso['vs_sop_mean'], 2),
         'RBRS-AE vs SOP':      round(rbrs.get('vs_sop_mean', 0), 2),
+        'ALNS vs SOP':         round(alns['vs_sop_mean'], 2) if alns else None,
         'Paper':               paper,
         'Diff (DEPSO-Paper)':  diff,
         'DEPSO Runtime (s)':   round(depso['mean_rt'], 2),
         'RBRS-AE Runtime (s)': round(rbrs.get('mean_rt', 0), 2),
+        'ALNS Runtime (s)':    round(alns['mean_rt'], 2) if alns else None,
         'Status':              '✅' if abs(diff) < 8 else '⚠️',
     })
 
@@ -113,10 +116,11 @@ st.subheader(f"📋 Results Table ({len(filtered)} scenarios)")
 st.dataframe(
     filtered[[
         'Scenario', 'K (Orders)', 'N_maxol', 'A_maxol',
-        'DEPSO vs SOP', 'RBRS-AE vs SOP', 'Paper',
-        'Diff (DEPSO-Paper)', 'DEPSO Runtime (s)', 'RBRS-AE Runtime (s)', 'Status'
+        'DEPSO vs SOP', 'RBRS-AE vs SOP', 'ALNS vs SOP', 'Paper',
+        'Diff (DEPSO-Paper)', 'DEPSO Runtime (s)', 'RBRS-AE Runtime (s)',
+        'ALNS Runtime (s)', 'Status'
     ]].style.background_gradient(
-        subset=['DEPSO vs SOP', 'RBRS-AE vs SOP'],
+        subset=['DEPSO vs SOP', 'RBRS-AE vs SOP', 'ALNS vs SOP'],
         cmap='RdYlGn', vmin=-95, vmax=-65
     ).background_gradient(
         subset=['Diff (DEPSO-Paper)'],

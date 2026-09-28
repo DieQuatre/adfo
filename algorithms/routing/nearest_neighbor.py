@@ -24,13 +24,29 @@ def nearest_neighbor_route(locations: list[int], warehouse, start: int = None) -
 
     # Unique lokasyonlar
     unique_locs = list(set(locations))
-    df = warehouse.dist_m  # lokal referans — attribute lookup maliyetini azaltır
-
     route = [start]
     remaining = set(unique_locs)
     current = start
     total_distance = 0.0
 
+    nodes = [start] + unique_locs
+    D = warehouse.submatrix(nodes)
+    if D is not None:
+        # Aynı sonuç, daha hızlı: mesafeler alt-matristen okunur. `remaining`
+        # kümesi eskisiyle aynı kurulduğu için eşitlik durumları da aynı çözülür.
+        pos = {loc: i for i, loc in enumerate(nodes)}
+        while remaining:
+            row = D[pos[current]]
+            nearest = min(remaining, key=lambda loc: row[pos[loc]])
+            total_distance += row[pos[nearest]]
+            route.append(nearest)
+            remaining.discard(nearest)
+            current = nearest
+        total_distance += D[pos[current]][pos[start]]
+        route.append(start)
+        return route, total_distance
+
+    df = warehouse.dist_m
     while remaining:
         nearest = min(remaining, key=lambda loc: df(current, loc))
         d = df(current, nearest)

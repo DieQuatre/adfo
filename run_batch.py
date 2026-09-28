@@ -1,16 +1,19 @@
 """
 run_batch.py
 =============
-5'er 5'er senaryo üret ve koştur.
+35 senaryoyu (Kübler Appendix H) koşturur: SOP, FCFS, DEPSO, RBRS-AE, ALNS.
 
 Kullanım:
-    python run_batch.py --batch 1   # senaryo 1-5
-    python run_batch.py --batch 2   # senaryo 6-10
-    ...
-    python run_batch.py --batch 7   # senaryo 31-35
+    python run_batch.py --batch 1              # senaryo 1-5
+    python run_batch.py --batch all --jobs 8   # 35 senaryo, 8 paralel işlem
+    python run_batch.py --summary              # kayıtlı sonuçların özeti
 
-Her batch: data*/ havuzundan örnekleme + 5 instance × 4 algoritma koşumu
-Süre tahmini: ~3-5 dakika/batch (bu ortamda), ~30-60 dk (kendi makinende 40 inst)
+Her senaryo: data*/ havuzundan k siparişlik --n örnek; her örnekte tüm
+algoritmalar AYNI siparişlerle koşar. Algoritma ayarları config.py'den gelir;
+yalnızca DEPSO iterasyonu komut satırından değiştirilebilir (varsayılan: makale, 500).
+
+Sonuç dosyası results/batch_<i>.json: ortalamalar + örnek bazında ham değerler
+(istatistiksel testler ve web sitesi için) + kullanılan ayarlar ve kod sürümü.
 """
 
 import sys
@@ -18,6 +21,8 @@ import json
 import time
 import random
 import argparse
+import subprocess
+from multiprocessing import Pool
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,6 +33,10 @@ from benchmarks.sop import SOP
 from benchmarks.fcfs import FCFS
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from algorithms.alns import ALNS
+import config
+
+ALGORITHMS = ['SOP', 'FCFS', 'DEPSO', 'RBRS-AE', 'ALNS']
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -133,78 +142,101 @@ def sample_instances(n_maxol: int, a_maxol: int, k: int,
 
 def _mean(v): return sum(v)/len(v) if v else 0.0
 
-def run_one_scenario(scenario: dict, n_instances: int,
-                     depso_iter: int, wh: Warehouse) -> dict:
-    k      = scenario['k']
-    n      = scenario['n']
-    a      = scenario['a']
-    name   = scenario['name']
-    paper  = PAPER.get(name, '?')
+def _instance_seed(inst_id: int, k: int) -> int:
+    return inst_id * 7 + 42 + k      # sample_instances ile aynı formül
 
-    print(f"\n  [{name}]  K={k}, N_maxol={n}, A_maxol={a}  "
-          f"(paper DEPSO vs SOP: {paper}%)")
 
-    # Sipariş kaynağı: yalnızca Kübler veri seti (yedek yol yok).
-    instances = sample_instances(n, a, k, n_instances)
-    source = 'data_pool'
+_WH = None
 
-    print(f"    kaynak: {source}, {len(instances)} instance")
 
-    results = {alg: {'td': [], 'rt': []}
-               for alg in ['SOP', 'FCFS', 'DEPSO', 'RBRS-AE']}
+def _run_instance(task: tuple) -> dict:
+    """Tek bir (senaryo, örnek) için tüm algoritmalar. Paralel işçide çalışır."""
+    global _WH
+    if _WH is None:
+        _WH = Warehouse()
+    name, k, n, a, inst_id, depso_iter = task
+    seed = _instance_seed(inst_id, k)
+    pool = load_pool(n, a)
+    if len(pool) < k:
+        raise RuntimeError(f"{DATA_DIR_MAP[(n, a)]}/ havuzu k={k} için yetersiz")
+    shuffled = pool[:]
+    random.Random(seed).shuffle(shuffled)
+    orders = shuffled[:k]
 
-    for inst_id, (all_orders, inst_seed) in enumerate(instances):
-        orders = all_orders[:k]
-        if len(orders) < 5:
-            continue
+    algos = {
+        'SOP':     SOP(),
+        'FCFS':    FCFS(),
+        'DEPSO':   DEPSO(num_iterations=depso_iter, seed=seed),
+        'RBRS-AE': RBRS_AE(seed=seed),     # ayarlar config.RBRS_AE
+        'ALNS':    ALNS(seed=seed),        # ayarlar config.ALNS
+    }
+    out = {'scenario': name, 'inst_id': inst_id, 'seed': seed}
+    for alg in ALGORITHMS:
+        sol = algos[alg].solve(orders, _WH)
+        out[alg] = {'td': sol.total_travel_distance,
+                    'rt': sol.runtime_seconds,
+                    'batches': sol.num_batches}
+    return out
 
-        algos = [
-            ('SOP',     SOP()),
-            ('FCFS',    FCFS()),
-            ('DEPSO',   DEPSO(num_iterations=depso_iter,
-                              num_particles=5, seed=inst_seed)),
-            ('RBRS-AE', RBRS_AE(seed=inst_seed)),   # ayarlar config.RBRS_AE
-        ]
 
-        line_parts = []
-        for alg_name, algo in algos:
-            sol = algo.solve(orders, wh)
-            results[alg_name]['td'].append(sol.total_travel_distance)
-            results[alg_name]['rt'].append(sol.runtime_seconds)
-            line_parts.append(f"{alg_name}={sol.total_travel_distance:.0f}")
-
-        print(f"    inst {inst_id+1}: {' '.join(line_parts)}")
-
-    # İstatistik
-    sop_tds  = results['SOP']['td']
-    fcfs_tds = results['FCFS']['td']
+def _aggregate(scenario: dict, inst_results: list[dict]) -> dict:
+    name, k, n, a = scenario['name'], scenario['k'], scenario['n'], scenario['a']
+    paper = PAPER.get(name, '?')
+    inst_results = sorted(inst_results, key=lambda r: r['inst_id'])
+    sop = [r['SOP']['td'] for r in inst_results]
+    fcfs = [r['FCFS']['td'] for r in inst_results]
     stats = {}
-    for alg in ['SOP', 'FCFS', 'DEPSO', 'RBRS-AE']:
-        tds = results[alg]['td']
-        rts = results[alg]['rt']
-        if not tds:
-            continue
-        vs_sop  = [((t-s)/s*100) for t,s in zip(tds, sop_tds) if s > 0]
-        vs_fcfs = [((t-f)/f*100) for t,f in zip(tds, fcfs_tds) if f > 0]
+    for alg in ALGORITHMS:
+        tds = [r[alg]['td'] for r in inst_results]
+        rts = [r[alg]['rt'] for r in inst_results]
+        vs_sop = [(t - s) / s * 100 for t, s in zip(tds, sop) if s > 0]
+        vs_fcfs = [(t - f) / f * 100 for t, f in zip(tds, fcfs) if f > 0]
         stats[alg] = {
             'mean_td':      round(_mean(tds), 1),
             'mean_rt':      round(_mean(rts), 2),
             'vs_sop_mean':  round(_mean(vs_sop), 2),
             'vs_fcfs_mean': round(_mean(vs_fcfs), 2),
+            'td':           [round(t, 3) for t in tds],
+            'rt':           [round(t, 3) for t in rts],
+            'batches':      [r[alg]['batches'] for r in inst_results],
         }
-
-    depso_vs_sop  = stats.get('DEPSO', {}).get('vs_sop_mean', 0)
-    rbrs_vs_sop   = stats.get('RBRS-AE', {}).get('vs_sop_mean', 0)
-    diff          = round(depso_vs_sop - paper, 2) if isinstance(paper, float) else '?'
-    ok            = "✅" if isinstance(diff, float) and abs(diff) < 5 else "⚠️"
-
-    print(f"    → DEPSO vs SOP: {depso_vs_sop:.2f}%  "
-          f"(paper: {paper}%  fark: {diff}%  {ok})")
-    print(f"    → RBRS-AE vs SOP: {rbrs_vs_sop:.2f}%")
-
     return {'scenario': name, 'k': k, 'n_maxol': n, 'a_maxol': a,
-            'paper_vs_sop': paper, 'n_instances': len(instances),
-            'order_source': source, 'stats': stats}
+            'paper_vs_sop': paper, 'n_instances': len(inst_results),
+            'seeds': [r['seed'] for r in inst_results],
+            'order_source': 'data_pool', 'stats': stats}
+
+
+def run_scenarios(scenarios: list[dict], n_instances: int, depso_iter: int,
+                  jobs: int = 1) -> list[dict]:
+    tasks = [(s['name'], s['k'], s['n'], s['a'], i, depso_iter)
+             for s in scenarios for i in range(n_instances)]
+    done: dict[str, list] = {s['name']: [] for s in scenarios}
+    t0 = time.perf_counter()
+
+    def _report(r):
+        done[r['scenario']].append(r)
+        parts = ' '.join(f"{alg}={r[alg]['td']:.0f}" for alg in ALGORITHMS)
+        n_done = sum(len(v) for v in done.values())
+        print(f"  [{n_done}/{len(tasks)} {time.perf_counter() - t0:6.0f}s] "
+              f"{r['scenario']} #{r['inst_id'] + 1}: {parts}", flush=True)
+
+    if jobs > 1:
+        with Pool(jobs) as pool:
+            for r in pool.imap_unordered(_run_instance, tasks):
+                _report(r)
+    else:
+        for t in tasks:
+            _report(_run_instance(t))
+
+    return [_aggregate(s, done[s['name']]) for s in scenarios]
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                                       text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return 'bilinmiyor'
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -216,7 +248,7 @@ def print_summary(results: list):
     print("ÖZET TABLO — Paper Appendix H vs Bizim Sonuçlarımız")
     print("="*72)
     print(f"{'Senaryo':<12} {'DEPSO/SOP':>10} {'Paper':>10} {'Fark':>8} "
-          f"{'RBRS/SOP':>10} {'Durum':>6}")
+          f"{'RBRS/SOP':>10} {'ALNS/SOP':>10} {'Durum':>6}")
     print("-"*72)
 
     for r in results:
@@ -225,11 +257,12 @@ def print_summary(results: list):
             continue
         depso = r['stats']['DEPSO']['vs_sop_mean']
         rbrs  = r['stats']['RBRS-AE']['vs_sop_mean']
+        alns  = r['stats'].get('ALNS', {}).get('vs_sop_mean', float('nan'))
         paper = r['paper_vs_sop']
         diff  = round(depso - paper, 2) if isinstance(paper, float) else 0
         ok    = "✅" if abs(diff) < 8 else "⚠️"
         print(f"{r['scenario']:<12} {depso:>10.2f}% {paper:>10.2f}% "
-              f"{diff:>+8.2f}% {rbrs:>10.2f}%  {ok}")
+              f"{diff:>+8.2f}% {rbrs:>10.2f}% {alns:>10.2f}%  {ok}")
 
     print("="*72)
 
@@ -253,15 +286,37 @@ def load_all_results() -> list:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch", type=int, required=False,
-                        help="Hangi batch? (1-7). Belirtilmezse özet gösterir.")
+    parser.add_argument("--batch", type=str, required=False,
+                        help="1-7 ya da 'all'. Belirtilmezse özet gösterir.")
     parser.add_argument("--n", type=int, default=5,
-                        help="Instance sayısı (default: 5)")
-    parser.add_argument("--depso-iter", type=int, default=100,
-                        help="DEPSO iterasyon (default: 100)")
+                        help="Senaryo başına örnek sayısı (varsayılan 5)")
+    parser.add_argument("--depso-iter", type=int,
+                        default=config.DEPSO['num_iterations'],
+                        help="DEPSO iterasyon (varsayılan config: 500, makale)")
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="Paralel işlem sayısı (örn. çekirdek sayısı - 2)")
+    parser.add_argument("--only", type=str, default=None,
+                        help="Yalnızca bu senaryolar, örn. 50_2_6,100_6_6 "
+                             "(sonuç results/only.json'a yazılır, batch dosyaları değişmez)")
     parser.add_argument("--summary", action="store_true",
                         help="Tüm batch sonuçlarını özetler")
     args = parser.parse_args()
+
+    if args.only:
+        wanted = [x.strip() for x in args.only.split(',') if x.strip()]
+        by = {s['name']: s for s in ALL_35}
+        missing = [w for w in wanted if w not in by]
+        if missing:
+            print(f"Bilinmeyen senaryo: {missing}")
+            sys.exit(1)
+        res = run_scenarios([by[w] for w in wanted], args.n, args.depso_iter, args.jobs)
+        Path("results").mkdir(exist_ok=True)
+        with open(Path("results") / "only.json", 'w', encoding='utf-8') as f:
+            json.dump({'n_instances': args.n, 'depso_iter': args.depso_iter,
+                       'algorithms': ALGORITHMS, 'git_commit': _git_commit(),
+                       'results': res}, f, indent=2)
+        print_summary(res)
+        sys.exit(0)
 
     if args.summary or args.batch is None:
         all_res = load_all_results()
@@ -275,45 +330,41 @@ if __name__ == "__main__":
                       f"# {', '.join(names)}")
         sys.exit(0)
 
-    batch_idx = args.batch
-    if batch_idx < 1 or batch_idx > 7:
-        print("Batch 1-7 arasında olmalı!")
+    if args.batch == 'all':
+        batch_ids = list(range(1, 8))
+    elif args.batch.isdigit() and 1 <= int(args.batch) <= 7:
+        batch_ids = [int(args.batch)]
+    else:
+        print("--batch 1-7 arasında ya da 'all' olmalı!")
         sys.exit(1)
 
-    batch = BATCHES[batch_idx - 1]
-    names = [s['name'] for s in batch]
+    scenarios = [s for i in batch_ids for s in BATCHES[i - 1]]
+    print("=" * 60)
+    print(f"BATCH {args.batch}: {len(scenarios)} senaryo × {args.n} örnek, "
+          f"DEPSO {args.depso_iter} iter, {args.jobs} paralel işlem")
+    print("=" * 60)
 
-    print(f"{'='*60}")
-    print(f"BATCH {batch_idx}/7: {', '.join(names)}")
-    print(f"Instance: {args.n}, DEPSO iter: {args.depso_iter}")
-    print(f"{'='*60}")
-
-    wh = Warehouse()
     t0 = time.perf_counter()
+    results = run_scenarios(scenarios, args.n, args.depso_iter, args.jobs)
+    by_name = {r['scenario']: r for r in results}
 
-    batch_results = []
-    for scenario in batch:
-        result = run_one_scenario(scenario, args.n, args.depso_iter, wh)
-        batch_results.append(result)
-
-    # Kaydet
+    meta = {
+        'n_instances': args.n, 'depso_iter': args.depso_iter,
+        'algorithms': ALGORITHMS, 'git_commit': _git_commit(),
+        'config': {'DEPSO': config.DEPSO, 'RBRS_AE': config.RBRS_AE,
+                   'ALNS': config.ALNS},
+    }
     Path("results").mkdir(exist_ok=True)
-    out = Path("results") / f"batch_{batch_idx}.json"
-    with open(out, 'w') as f:
-        json.dump({'batch': batch_idx, 'scenarios': names,
-                   'n_instances': args.n, 'depso_iter': args.depso_iter,
-                   'results': batch_results}, f, indent=2)
+    for i in batch_ids:
+        names = [s['name'] for s in BATCHES[i - 1]]
+        out = Path("results") / f"batch_{i}.json"
+        with open(out, 'w', encoding='utf-8') as f:
+            json.dump({'batch': i, 'scenarios': names, **meta,
+                       'results': [by_name[n] for n in names]}, f, indent=2)
+        print(f"  Kayıt: {out}")
 
-    elapsed = time.perf_counter() - t0
-    print(f"\n✓ Batch {batch_idx} tamamlandı ({elapsed:.0f}s)")
-    print(f"  Kayıt: {out}")
+    print(f"\n✓ Tamamlandı ({time.perf_counter() - t0:.0f}s)")
+    print_summary(results)
 
-    # Özet
-    print_summary(batch_results)
-
-    # Tüm batch'ler bitti mi?
     all_res = load_all_results()
-    print(f"\nToplam tamamlanan senaryo: {len(all_res)}/35")
-    if len(all_res) == 35:
-        print("\n🎉 35 senaryo TAMAMLANDI! Tam özet:")
-        print_summary(all_res)
+    print(f"\nToplam kayıtlı senaryo: {len(all_res)}/35")

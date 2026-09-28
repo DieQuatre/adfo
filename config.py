@@ -126,6 +126,30 @@ RBRS_AE = {
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# ALNS PARAMETRELERİ (docs/ALNS_formulasyon.md)
+# ════════════════════════════════════════════════════════════════════════════
+ALNS = {
+    # Formülasyonda verilen değerler
+    'sigma1': 33,              # yeni küresel en iyi
+    'sigma2': 20,              # mevcuttan iyi
+    'sigma3': 8,               # kötü ama kabul edilen
+    'reaction': 0.15,          # r, ağırlık güncelleme katsayısı (13)
+    'segment_length': 40,      # Δ_seg
+    'init_worse_pct': 0.05,    # w0, başlangıç sıcaklığı (16)
+    'cooling': 0.9975,         # c, T ← T·c (15)
+
+    # Formülasyonda sayısal değeri verilmeyenler (Ropke ve Pisinger 2006
+    # varsayılanlarına yakın seçildi; gerekirse burada değiştirilir)
+    'max_iterations': 500,     # DEPSO ile aynı iterasyon bütçesi
+    'q_min_frac': 0.05,        # yıkılacak sipariş sayısı q ∈ [q_min, q_max]
+    'q_max_frac': 0.15,        #   q_min = max(2, ⌈q_min_frac·n⌉)
+    'q_max_abs': 30,           #   q_max = min(q_max_abs, max(q_min, ⌈q_max_frac·n⌉))
+    'p_worst': 3.0,            # worst removal belirlilik üssü p (6)
+    'p_shaw': 6.0,             # related removal belirlilik üssü p (6)
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # DİNAMİK STORAGE ASSIGNMENT (Paper Section 5.3, 6.4)
 # ════════════════════════════════════════════════════════════════════════════
 DYNAMIC_STORAGE = {

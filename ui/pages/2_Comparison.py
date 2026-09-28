@@ -2,7 +2,7 @@
 ui/pages/2_Comparison.py
 ========================
 Compare all algorithms side by side.
-DEPSO vs RBRS-AE vs baselines.
+DEPSO vs RBRS-AE vs ALNS vs baselines.
 """
 
 import sys
@@ -20,11 +20,12 @@ from benchmarks.sop import SOP
 from benchmarks.fcfs import FCFS
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
-from config import RBRS_AE as RBRS_CFG
+from config import RBRS_AE as RBRS_CFG, ALNS as ALNS_CFG
+from algorithms.alns import ALNS
 
 st.set_page_config(page_title="Comparison", page_icon="⚖️", layout="wide")
 st.title("⚖️ Algorithm Comparison")
-st.markdown("SOP · FCFS · **DEPSO** · **RBRS-AE** — side by side on the same problem.")
+st.markdown("SOP · FCFS · **DEPSO** · **RBRS-AE** · **ALNS** — side by side on the same problem.")
 
 @st.cache_resource
 def get_wh(): return Warehouse()
@@ -54,6 +55,10 @@ with st.sidebar:
     r_shift = st.slider("Shift attempts", 20, 200, RBRS_CFG["shift_attempts"])
     r_swap  = st.slider("Swap attempts", 20, 200, RBRS_CFG["swap_attempts"])
 
+    st.divider()
+    st.header("🔧 ALNS")
+    a_iter = st.slider("ALNS iterations", 50, 1000, ALNS_CFG["max_iterations"])
+
     seed = st.number_input("Seed", value=42)
 
 # ── Load problem ──────────────────────────────────────────────────
@@ -76,6 +81,7 @@ if st.button("🚀 Run All Algorithms", type="primary", use_container_width=True
         ("DEPSO",   DEPSO(num_iterations=d_iter, num_particles=d_part, seed=int(seed))),
         ("RBRS-AE", RBRS_AE(max_iterations=r_iter, max_no_improvement=r_noimp,
                              shift_attempts=r_shift, swap_attempts=r_swap, seed=int(seed))),
+        ("ALNS",    ALNS(max_iterations=a_iter, seed=int(seed))),
     ]
 
     solutions = {}
@@ -107,7 +113,7 @@ if st.button("🚀 Run All Algorithms", type="primary", use_container_width=True
     st.subheader("📉 Travel Distance Comparison")
     labels = list(solutions.keys())
     dists  = [s.total_travel_distance for s in solutions.values()]
-    colors = ["#95a5a6", "#7f8c8d", "#e74c3c", "#3498db"]
+    colors = ["#95a5a6", "#7f8c8d", "#e74c3c", "#3498db", "#27ae60"]
 
     fig = go.Figure(go.Bar(
         x=labels, y=dists,
@@ -151,6 +157,10 @@ if st.button("🚀 Run All Algorithms", type="primary", use_container_width=True
             fig2.add_trace(go.Scatter(
                 y=rbrs_sol.convergence_history, name="RBRS-AE",
                 line=dict(color="#3498db", width=2, dash="dash")))
+        if solutions["ALNS"].convergence_history:
+            fig2.add_trace(go.Scatter(
+                y=solutions["ALNS"].convergence_history, name="ALNS",
+                line=dict(color="#27ae60", width=2, dash="dot")))
         # Baseline reference lines
         fig2.add_hline(y=solutions["FCFS"].total_travel_distance,
                        line_dash="dot", line_color="#7f8c8d",
