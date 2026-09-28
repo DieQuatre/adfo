@@ -18,32 +18,38 @@ def two_opt_improve(route: list[int], warehouse,
                     max_no_improvement: int = 2) -> tuple[list[int], float]:
     """
     Bir rotayı 2-opt ile iyileştir.
-    warehouse.dist_m() kullanır (numpy matris varsa O(1) lookup).
+
+    Mesafeler, rota düğümleri için bir kez çıkarılan alt-matristen okunur
+    (warehouse.submatrix). Sonuç, her adımda warehouse.dist_m() çağıran eski
+    sürümle birebir aynıdır; yalnızca Python fonksiyon çağrısı yükü kalkar.
     """
     if len(route) <= 4:
         return route[:], _route_distance(route, warehouse)
 
-    best_route = route[:]
-    best_distance = _route_distance(best_route, warehouse)
-    no_improvement_count = 0
-    df = warehouse.dist_m  # lokal referans
+    nodes = list(dict.fromkeys(route))
+    D = warehouse.submatrix(nodes)
+    if D is None:
+        return _two_opt_slow(route, warehouse, max_iterations, max_no_improvement)
 
+    pos = {loc: i for i, loc in enumerate(nodes)}
+    r = [pos[loc] for loc in route]
+    best_distance = 0.0
+    for i in range(len(r) - 1):
+        best_distance += D[r[i]][r[i + 1]]
+
+    no_improvement_count = 0
+    n = len(r)
     for _ in range(max_iterations):
         improved = False
-        n = len(best_route)
-
         for i in range(1, n - 2):
             for j in range(i + 1, n - 1):
-                d_before = (df(best_route[i - 1], best_route[i]) +
-                            df(best_route[j],     best_route[j + 1]))
-                d_after  = (df(best_route[i - 1], best_route[j]) +
-                            df(best_route[i],     best_route[j + 1]))
-
+                a, b, c, d = r[i - 1], r[i], r[j], r[j + 1]
+                d_before = D[a][b] + D[c][d]
+                d_after = D[a][c] + D[b][d]
                 if d_after < d_before - 1e-9:
-                    best_route[i:j + 1] = best_route[i:j + 1][::-1]
+                    r[i:j + 1] = r[i:j + 1][::-1]
                     best_distance += (d_after - d_before)
                     improved = True
-
         if not improved:
             no_improvement_count += 1
             if no_improvement_count >= max_no_improvement:
@@ -51,6 +57,34 @@ def two_opt_improve(route: list[int], warehouse,
         else:
             no_improvement_count = 0
 
+    return [nodes[k] for k in r], best_distance
+
+
+def _two_opt_slow(route, warehouse, max_iterations, max_no_improvement):
+    """Mesafe matrisi yokken kullanılan eski (dist_m tabanlı) sürüm."""
+    best_route = route[:]
+    best_distance = _route_distance(best_route, warehouse)
+    no_improvement_count = 0
+    df = warehouse.dist_m
+    for _ in range(max_iterations):
+        improved = False
+        n = len(best_route)
+        for i in range(1, n - 2):
+            for j in range(i + 1, n - 1):
+                d_before = (df(best_route[i - 1], best_route[i]) +
+                            df(best_route[j],     best_route[j + 1]))
+                d_after  = (df(best_route[i - 1], best_route[j]) +
+                            df(best_route[i],     best_route[j + 1]))
+                if d_after < d_before - 1e-9:
+                    best_route[i:j + 1] = best_route[i:j + 1][::-1]
+                    best_distance += (d_after - d_before)
+                    improved = True
+        if not improved:
+            no_improvement_count += 1
+            if no_improvement_count >= max_no_improvement:
+                break
+        else:
+            no_improvement_count = 0
     return best_route, best_distance
 
 
