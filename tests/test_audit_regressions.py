@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from algorithms.base import Batch
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from algorithms.routing.route_cache import RouteCache
 from config import ITEMS
 from core.data_loader import DataLoader
 from core.warehouse import Warehouse
@@ -93,7 +94,7 @@ def test_stagnation_increments_when_gbest_flat(orders, wh):
 def test_insertion_cost_is_marginal_not_total(orders, wh):
     """Maliyet = rota(batch+order) - rota(batch), tamamı değil."""
     algo = RBRS_AE(seed=42)
-    algo._wh, algo._route_cache = wh, {}
+    algo._wh, algo._routes = wh, RouteCache(wh)
 
     batch = Batch(batch_id=0, orders=[orders[0]],
                   total_weight=orders[0].total_weight)
@@ -111,7 +112,7 @@ def test_regret_assignment_respects_capacity_lower_bound(orders, wh):
     Hata varken 50 sipariş için 22 batch açılıyordu (alt sınır 2).
     """
     algo = RBRS_AE(seed=42)
-    algo._wh, algo._route_cache = wh, {}
+    algo._wh, algo._routes = wh, RouteCache(wh)
 
     total_weight = sum(o.total_weight for o in orders)
     lower_bound = -(-total_weight // ITEMS['picker_capacity_WU'])
