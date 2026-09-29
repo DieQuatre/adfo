@@ -43,40 +43,43 @@ Yorum: yaklaşık yöntem, taşımanın kendi etkisini gürültüsüz ölçüyor
 yöntemin ölçümüne ise algoritmanın dalgalanması karışıyor. Ortalamalar
 birbirine yakın.
 
-## İlk sonuçlar ve açık soru
+## `o` sayacının başlangıcı
 
-Kübler senaryo 1, 9 dönem, tüm alt dönemler, hızlı gruplama (FIRSTFIT):
+Makale Tab. 3'te 1. test döneminin sonunda taşıma yapılıyor (senaryo 1: 24
+ürün). `o = 2` "son dönemde ve bu dönemde yanlış sınıfta" demek; bunun ilk test
+döneminde de değerlendirilebilmesi için yanlış sınıf sayacı ısınma
+dönemlerinin gerçekleşen talebiyle başlatılır (ürünler ısınmada başlangıç
+yerinde durur). Önceki sürümde sayaç sıfırdan başlıyordu ve 1. dönemde hiç
+taşıma yapılmıyordu.
 
-| | Bu uygulama | Makale (DEPSO) |
-|---|---|---|
-| Mesafe azalması | %0,89 | %15,02 |
-| Relocation eforu | %1,20 | %2,79 |
-| Dönem başına taşınan ürün | 4–11 | 3–25 |
-| Statik mesafe / dönem | ~130–151 bin LU | ~146–158 bin LU |
+## Sonuçlar: veri setinin etkisi
 
-Taşınan ürün sayısı ve statik mesafe makaleyle aynı düzeyde, ama mesafe
-azalması çok küçük. İnceleme:
+Aynı relocation kodu, FIRSTFIT gruplama, 9 dönem, tüm alt dönemler:
 
-- Elimizdeki Kübler veri setinde en çok satan ürünler dönemler boyunca en
-  çok satan olarak kalıyor (ör. ürün 0: 826 → 676 satır; hep A sınıfında).
-  Sınıf değiştiren ürünler sınıf sınırındaki az satan ürünler (A sınırı ≈ 6
-  satır/dönem); bunları taşımak dönem başına birkaç on LU kazandırıyor.
-- Makalenin veri üretim yöntemi (Şekil 10, adım 1–10) ise bilerek **çok
-  satan ürünleri az satana, rastgele ürünleri çok satana çeviriyor**
-  ("fast-moving items can (frequently) become slow movers"). Makaledeki
-  %15'lik kazanç bu büyük yer değiştirmelerden geliyor.
-- Veri setimizdeki 1. dönem sipariş sayısı ~10 300; makalede 5 000.
+| Veri | Mesafe azalması | Efor | Net |
+|---|---|---|---|
+| Eski veri seti (`data/`), senaryo 1 | %0,97 | %1,32 | %−0,35 |
+| **Şekil 10 ile yeniden üretilen, senaryo 1** | **%17,09** | **%4,07** | **%13,02** |
+| Makale, senaryo 1 (DEPSO) | %15,02 | %2,79 | %12,23 |
+| **Şekil 10 ile yeniden üretilen, senaryo 2** | **%6,83** | **%2,24** | **%4,59** |
+| Makale, senaryo 2 (DEPSO) | %7,45 | %2,08 | %5,37 |
+| Kendi üreticimiz, 5000 lok., tek geçişli, %70, yüksek dinamik | %0,56 | %1,11 | %−0,55 |
 
-Sonuç: relocation kodu makaleyi izliyor; fark büyük olasılıkla verinin
-dinamiğinden kaynaklanıyor. Kübler veri üreticisinin repoda olmaması (denetim
-K5) burada doğrudan önem kazanıyor. Sonraki adım: Şekil 10'daki yöntemi
-yeniden kurup senaryo 1 ve 2'yi DEPSO ile tekrar koşmak. Kendi üreticimize de
-"çok satan ↔ az satan" takası yapan bir profil eklenebilir.
+Eski veri setinde çok satan ürünler hep çok satan kalıyordu; makalenin
+Şekil 10 yöntemi ise bilerek çok satanları yavaşlatıp rastgele ürünleri
+hızlandırıyor. Yöntem yeniden kurulunca (`core/kubler_generator.py`,
+`docs/KUBLER_VERI.md`) sonuç makaleye yaklaştı. Relocation kodu değişmedi
+(yalnızca yukarıdaki sayaç başlangıcı).
+
+Kendi üreticimizin "yüksek" dinamiği de aynı eksikliği taşıyor: talep seviyesi
+değişiyor ama çok satan ↔ az satan dönüşümü yok. Oraya da bir takas profili
+eklenmeli.
 
 ## Komutlar
 
 ```bash
-python run_dynamic.py --source kubler --scenario 1 --algo DEPSO --jobs 16
+python run_dynamic.py --source kubler-fig10 --scenario 1 --algo DEPSO --jobs 16
+python run_dynamic.py --source kubler --scenario 1 --algo DEPSO --jobs 16   # eski veri
 python run_dynamic.py --source generated --size 10000 --blocks 2 --fill 0.7 \
     --dynamics yuksek --algo ALNS --jobs 16
 python run_dynamic.py --source kubler --scenario 1 --algo FIRSTFIT      # hızlı

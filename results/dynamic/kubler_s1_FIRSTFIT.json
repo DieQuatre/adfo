@@ -11,9 +11,10 @@
   "seed": 0
  },
  "summary": {
-  "reduction_pct": 0.89,
-  "effort_pct": 1.2,
-  "net_pct": -0.31
+  "reduction_pct": 0.97,
+  "effort_pct": 1.32,
+  "subperiods_used": 20,
+  "net_pct": -0.35
  },
  "periods": [
   {
@@ -21,49 +22,203 @@
    "td_static": 151359.0,
    "td_dynamic": 151359.0,
    "reduction_pct": 0.0,
-   "effort_LU": 0.0,
-   "effort_pct": 0.0,
-   "candidates": 0,
-   "tested": 0,
-   "accepted": 0,
-   "relocated_items": 0,
-   "scenarios": [],
-   "net_pct": 0.0
+   "effort_LU": 3182.0,
+   "effort_pct": 2.102,
+   "candidates": 408,
+   "tested": 50,
+   "accepted": 12,
+   "relocated_items": 12,
+   "moves": [
+    [
+     337,
+     4659,
+     357,
+     "B",
+     "A"
+    ],
+    [
+     362,
+     2822,
+     714,
+     "B",
+     "A"
+    ],
+    [
+     387,
+     294,
+     346,
+     "B",
+     "A"
+    ],
+    [
+     339,
+     2107,
+     347,
+     "B",
+     "A"
+    ],
+    [
+     311,
+     2093,
+     704,
+     "B",
+     "A"
+    ],
+    [
+     315,
+     4293,
+     342,
+     "B",
+     "A"
+    ],
+    [
+     345,
+     4285,
+     703,
+     "B",
+     "A"
+    ],
+    [
+     398,
+     621,
+     1435,
+     "B",
+     "A"
+    ],
+    [
+     309,
+     4644,
+     336,
+     "B",
+     "A"
+    ],
+    [
+     399,
+     4633,
+     337,
+     "B",
+     "A"
+    ],
+    [
+     384,
+     623,
+     338,
+     "B",
+     "A"
+    ],
+    [
+     385,
+     248,
+     696,
+     "B",
+     "A"
+    ]
+   ],
+   "scenarios": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "net_pct": -2.102
   },
   {
    "period": 2,
    "td_static": 148334.0,
-   "td_dynamic": 148334.0,
-   "reduction_pct": 0.0,
-   "effort_LU": 1344.0,
-   "effort_pct": 0.906,
-   "candidates": 425,
+   "td_dynamic": 147811.0,
+   "reduction_pct": 0.353,
+   "effort_LU": 540.0,
+   "effort_pct": 0.364,
+   "candidates": 413,
    "tested": 50,
-   "accepted": 5,
-   "relocated_items": 5,
+   "accepted": 2,
+   "relocated_items": 2,
+   "moves": [
+    [
+     356,
+     993,
+     698,
+     "B",
+     "A"
+    ],
+    [
+     370,
+     7184,
+     1068,
+     "B",
+     "A"
+    ]
+   ],
    "scenarios": [
-    1,
-    1,
-    1,
     1,
     1
    ],
-   "net_pct": -0.906
+   "net_pct": -0.011
   },
   {
    "period": 3,
    "td_static": 145098.0,
-   "td_dynamic": 144832.0,
-   "reduction_pct": 0.183,
-   "effort_LU": 2165.0,
-   "effort_pct": 1.492,
-   "candidates": 494,
+   "td_dynamic": 144491.0,
+   "reduction_pct": 0.418,
+   "effort_LU": 1610.0,
+   "effort_pct": 1.11,
+   "candidates": 485,
    "tested": 50,
-   "accepted": 8,
-   "relocated_items": 8,
+   "accepted": 6,
+   "relocated_items": 6,
+   "moves": [
+    [
+     352,
+     5016,
+     694,
+     "B",
+     "A"
+    ],
+    [
+     396,
+     6830,
+     1796,
+     "B",
+     "A"
+    ],
+    [
+     347,
+     7188,
+     1799,
+     "B",
+     "A"
+    ],
+    [
+     357,
+     5366,
+     2156,
+     "B",
+     "A"
+    ],
+    [
+     401,
+     3541,
+     328,
+     "B",
+     "A"
+    ],
+    [
+     326,
+     3542,
+     690,
+     "B",
+     "A"
+    ]
+   ],
    "scenarios": [
-    1,
-    1,
     1,
     1,
     1,
@@ -71,60 +226,176 @@
     1,
     1
    ],
-   "net_pct": -1.309
+   "net_pct": -0.692
   },
   {
    "period": 4,
    "td_static": 143646.0,
-   "td_dynamic": 142688.0,
-   "reduction_pct": 0.667,
-   "effort_LU": 1604.0,
-   "effort_pct": 1.117,
-   "candidates": 487,
+   "td_dynamic": 142477.0,
+   "reduction_pct": 0.814,
+   "effort_LU": 1346.0,
+   "effort_pct": 0.937,
+   "candidates": 482,
    "tested": 50,
-   "accepted": 6,
-   "relocated_items": 6,
+   "accepted": 5,
+   "relocated_items": 5,
+   "moves": [
+    [
+     381,
+     2806,
+     691,
+     "B",
+     "A"
+    ],
+    [
+     364,
+     2468,
+     1420,
+     "B",
+     "A"
+    ],
+    [
+     402,
+     3192,
+     1421,
+     "B",
+     "A"
+    ],
+    [
+     380,
+     4631,
+     2153,
+     "B",
+     "A"
+    ],
+    [
+     515,
+     3174,
+     326,
+     "B",
+     "A"
+    ]
+   ],
    "scenarios": [
-    1,
     1,
     1,
     1,
     1,
     1
    ],
-   "net_pct": -0.45
+   "net_pct": -0.123
   },
   {
    "period": 5,
    "td_static": 140292.0,
-   "td_dynamic": 138912.0,
-   "reduction_pct": 0.984,
-   "effort_LU": 1105.0,
-   "effort_pct": 0.788,
+   "td_dynamic": 138667.0,
+   "reduction_pct": 1.158,
+   "effort_LU": 567.0,
+   "effort_pct": 0.404,
    "candidates": 515,
    "tested": 50,
-   "accepted": 4,
-   "relocated_items": 4,
+   "accepted": 2,
+   "relocated_items": 2,
+   "moves": [
+    [
+     573,
+     6095,
+     1057,
+     "B",
+     "A"
+    ],
+    [
+     3301,
+     7112,
+     657,
+     "C",
+     "B"
+    ]
+   ],
    "scenarios": [
-    1,
-    1,
     1,
     1
    ],
-   "net_pct": 0.196
+   "net_pct": 0.754
   },
   {
    "period": 6,
    "td_static": 140566.0,
-   "td_dynamic": 139028.0,
-   "reduction_pct": 1.094,
-   "effort_LU": 2167.0,
-   "effort_pct": 1.542,
-   "candidates": 730,
+   "td_dynamic": 139130.0,
+   "reduction_pct": 1.022,
+   "effort_LU": 2517.0,
+   "effort_pct": 1.791,
+   "candidates": 735,
    "tested": 50,
-   "accepted": 8,
-   "relocated_items": 8,
+   "accepted": 9,
+   "relocated_items": 9,
+   "moves": [
+    [
+     340,
+     5382,
+     1059,
+     "B",
+     "A"
+    ],
+    [
+     372,
+     6478,
+     2150,
+     "B",
+     "A"
+    ],
+    [
+     740,
+     4264,
+     682,
+     "B",
+     "A"
+    ],
+    [
+     1245,
+     5791,
+     1030,
+     "C",
+     "B"
+    ],
+    [
+     1775,
+     2701,
+     1762,
+     "C",
+     "B"
+    ],
+    [
+     1885,
+     3061,
+     2123,
+     "C",
+     "B"
+    ],
+    [
+     429,
+     4626,
+     1054,
+     "B",
+     "A"
+    ],
+    [
+     452,
+     5387,
+     2878,
+     "B",
+     "A"
+    ],
+    [
+     734,
+     6093,
+     316,
+     "B",
+     "A"
+    ]
+   ],
    "scenarios": [
+    1,
     1,
     1,
     1,
@@ -134,20 +405,110 @@
     1,
     1
    ],
-   "net_pct": -0.448
+   "net_pct": -0.769
   },
   {
    "period": 7,
    "td_static": 130212.0,
-   "td_dynamic": 128225.0,
-   "reduction_pct": 1.526,
-   "effort_LU": 2193.0,
-   "effort_pct": 1.684,
-   "candidates": 725,
+   "td_dynamic": 128339.0,
+   "reduction_pct": 1.438,
+   "effort_LU": 3270.0,
+   "effort_pct": 2.511,
+   "candidates": 732,
    "tested": 50,
-   "accepted": 8,
-   "relocated_items": 8,
+   "accepted": 12,
+   "relocated_items": 12,
+   "moves": [
+    [
+     538,
+     5753,
+     677,
+     "B",
+     "A"
+    ],
+    [
+     550,
+     971,
+     1050,
+     "B",
+     "A"
+    ],
+    [
+     639,
+     3184,
+     2872,
+     "B",
+     "A"
+    ],
+    [
+     742,
+     1757,
+     312,
+     "B",
+     "A"
+    ],
+    [
+     584,
+     5391,
+     674,
+     "B",
+     "A"
+    ],
+    [
+     806,
+     1712,
+     1047,
+     "B",
+     "A"
+    ],
+    [
+     359,
+     2797,
+     1405,
+     "B",
+     "A"
+    ],
+    [
+     540,
+     1736,
+     1407,
+     "B",
+     "A"
+    ],
+    [
+     483,
+     2816,
+     2139,
+     "B",
+     "A"
+    ],
+    [
+     765,
+     5729,
+     2508,
+     "B",
+     "A"
+    ],
+    [
+     768,
+     5004,
+     668,
+     "B",
+     "A"
+    ],
+    [
+     4072,
+     1859,
+     2492,
+     "C",
+     "B"
+    ]
+   ],
    "scenarios": [
+    1,
+    1,
+    1,
+    1,
     1,
     1,
     1,
@@ -157,21 +518,92 @@
     1,
     1
    ],
-   "net_pct": -0.158
+   "net_pct": -1.073
   },
   {
    "period": 8,
    "td_static": 130504.0,
-   "td_dynamic": 128440.0,
-   "reduction_pct": 1.582,
-   "effort_LU": 3153.0,
-   "effort_pct": 2.416,
-   "candidates": 753,
+   "td_dynamic": 128371.0,
+   "reduction_pct": 1.634,
+   "effort_LU": 2738.0,
+   "effort_pct": 2.098,
+   "candidates": 758,
    "tested": 50,
-   "accepted": 11,
-   "relocated_items": 11,
+   "accepted": 10,
+   "relocated_items": 10,
+   "moves": [
+    [
+     395,
+     1332,
+     1400,
+     "B",
+     "A"
+    ],
+    [
+     394,
+     1358,
+     1775,
+     "B",
+     "A"
+    ],
+    [
+     318,
+     291,
+     3237,
+     "B",
+     "A"
+    ],
+    [
+     732,
+     4666,
+     3238,
+     "B",
+     "A"
+    ],
+    [
+     491,
+     625,
+     304,
+     "B",
+     "A"
+    ],
+    [
+     722,
+     1356,
+     665,
+     "B",
+     "A"
+    ],
+    [
+     596,
+     4636,
+     1771,
+     "B",
+     "A"
+    ],
+    [
+     2088,
+     7155,
+     2853,
+     "C",
+     "B"
+    ],
+    [
+     1276,
+     6633,
+     3225,
+     "C",
+     "B"
+    ],
+    [
+     2610,
+     1170,
+     3586,
+     "C",
+     "B"
+    ]
+   ],
    "scenarios": [
-    1,
     1,
     1,
     1,
@@ -183,27 +615,48 @@
     1,
     1
    ],
-   "net_pct": -0.834
+   "net_pct": -0.464
   },
   {
    "period": 9,
    "td_static": 133709.0,
-   "td_dynamic": 130707.0,
-   "reduction_pct": 2.245,
-   "effort_LU": 1419.0,
-   "effort_pct": 1.061,
-   "candidates": 803,
+   "td_dynamic": 130880.0,
+   "reduction_pct": 2.116,
+   "effort_LU": 927.0,
+   "effort_pct": 0.693,
+   "candidates": 809,
    "tested": 50,
-   "accepted": 5,
-   "relocated_items": 5,
+   "accepted": 3,
+   "relocated_items": 3,
+   "moves": [
+    [
+     2407,
+     5407,
+     294,
+     "C",
+     "B"
+    ],
+    [
+     3024,
+     3415,
+     1757,
+     "C",
+     "B"
+    ],
+    [
+     3701,
+     801,
+     2118,
+     "C",
+     "B"
+    ]
+   ],
    "scenarios": [
-    1,
-    1,
     1,
     1,
     1
    ],
-   "net_pct": 1.184
+   "net_pct": 1.423
   }
  ]
 }

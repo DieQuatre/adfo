@@ -87,14 +87,29 @@ def reference_records() -> list[dict]:
     return out
 
 
+def _paper_dynamic(problem: str):
+    """Kübler senaryolarında makalenin sonucu (config.VALIDATION_TARGETS)."""
+    import re
+    import config
+    m = re.match(r'kubler(?:_fig10)?_s(\d)', problem)
+    if not m:
+        return None
+    t, s = config.VALIDATION_TARGETS, m.group(1)
+    return {'reduction_pct': t[f'scenario{s}_travel_distance_reduction_pct'],
+            'effort_pct': t[f'scenario{s}_relocation_effort_pct'],
+            'net_pct': t[f'scenario{s}_net_improvement_pct']}
+
+
 def dynamic_records() -> list[dict]:
     out = []
-    for p in sorted((ROOT / "results" / "dynamic").glob("*.json")):
+    files = sorted((ROOT / "results" / "dynamic").glob("*.json"),
+                   key=lambda p: (not p.name.startswith('kubler_fig10'), p.name.lower()))
+    for p in files:
         d = json.loads(p.read_text(encoding='utf-8'))
         if 'periods' not in d:
             continue
         out.append({'problem': d['problem'], 'algorithm': d['algorithm'],
-                    'summary': d['summary'],
+                    'summary': d['summary'], 'paper': _paper_dynamic(d['problem']),
                     'periods': [{k: r[k] for k in ('period', 'reduction_pct', 'effort_pct',
                                                    'net_pct', 'accepted', 'tested')}
                                 for r in d['periods']]})

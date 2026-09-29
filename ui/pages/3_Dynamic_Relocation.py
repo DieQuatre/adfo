@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import config
-from core.dynamic_data import from_generated, from_kubler
+from core.dynamic_data import from_generated, from_kubler, from_kubler_fig10
 from run_dynamic import ALGOS, run_experiment
 
 st.set_page_config(page_title="Dynamic Relocation", page_icon="🔄", layout="wide")
@@ -28,8 +28,8 @@ st.markdown(
 
 with st.sidebar:
     st.header("⚙️ Parameters")
-    source = st.radio("Data", ["Kübler data set", "Generated warehouse"])
-    if source == "Kübler data set":
+    source = st.radio("Data", ["Kübler (Fig. 10 method)", "Kübler data set (old)", "Generated warehouse"])
+    if source.startswith("Kübler"):
         scenario = st.selectbox("Scenario", [1, 2],
                                 format_func=lambda x: f"Scenario {x} ({'high' if x == 1 else 'low'} dynamics)")
     else:
@@ -52,12 +52,19 @@ with st.sidebar:
 def problem_for(key):
     if key[0] == 'kubler':
         return from_kubler(key[1])
+    if key[0] == 'fig10':
+        return from_kubler_fig10(key[1])
     from core.generator import InstanceSpec, generate
     return from_generated(generate(InstanceSpec(*key[1:])))
 
 
 if st.button("🚀 Run", type="primary", use_container_width=True):
-    key = ('kubler', scenario) if source == "Kübler data set" else ('gen', size, blocks, fill, dyn, 0)
+    if source.startswith("Kübler (Fig"):
+        key = ('fig10', scenario)
+    elif source.startswith("Kübler"):
+        key = ('kubler', scenario)
+    else:
+        key = ('gen', size, blocks, fill, dyn, 0)
     problem = problem_for(key)
     box = st.empty()
     progress_rows = []
@@ -76,13 +83,13 @@ if st.button("🚀 Run", type="primary", use_container_width=True):
     c1.metric("Travel distance reduction", f"{summary['reduction_pct']:.2f}%")
     c2.metric("Relocation effort", f"{summary['effort_pct']:.2f}%")
     c3.metric("Net improvement", f"{summary['net_pct']:.2f}%")
-    if key[0] == 'kubler':
+    if key[0] in ('kubler', 'fig10'):
         t = config.VALIDATION_TARGETS
         st.caption(f"Paper (scenario {scenario}, DEPSO, full periods): reduction "
                    f"{t[f'scenario{scenario}_travel_distance_reduction_pct']}%, effort "
                    f"{t[f'scenario{scenario}_relocation_effort_pct']}%, net "
                    f"{t[f'scenario{scenario}_net_improvement_pct']}%. See docs/RELOCATION.md "
-                   f"for why the reconstructed data set gives smaller reductions.")
+                   f"(old data set vs. Fig. 10 method).")
 
     fig = go.Figure()
     fig.add_bar(x=[r['period'] for r in rows], y=[r['reduction_pct'] for r in rows],

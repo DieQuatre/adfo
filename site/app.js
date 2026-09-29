@@ -402,7 +402,9 @@ function renderExplorer() {
 // DİNAMİK YER ATAMASI
 // ════════════════════════════════════════════════════════════════════
 function dynName(d) {
-  if (d.problem.startsWith('kubler_s')) return `Kübler verisi, senaryo ${d.problem.slice(8)} · ${d.algorithm}`;
+  let m0 = d.problem.match(/^kubler_fig10_s(\d)/);
+  if (m0) return `Kübler yöntemiyle üretilen veri, senaryo ${m0[1]} (${m0[1] === '1' ? 'yüksek' : 'düşük'} dinamik) · ${d.algorithm}`;
+  if (d.problem.startsWith('kubler_s')) return `Eski Kübler veri seti, senaryo ${d.problem.slice(8)} · ${d.algorithm}`;
   const m = d.problem.match(/^S(\d+)_B(\d)_F(\d+)_(\w+?)_s(\d+)$/);
   if (m) return `Üretilmiş depo: ${nf(+m[1])} lok., ${dimValueLabel('blocks', m[2])}, %${m[3]}, ${dimValueLabel('dynamics', m[4])} dinamiklik · ${d.algorithm}`;
   return `${d.problem} · ${d.algorithm}`;
@@ -420,7 +422,8 @@ function initDynamic() {
     const s = d.summary;
     document.getElementById('dynHeadline').textContent =
       `Toplamda yürüme mesafesi %${nf(s.reduction_pct, 2)} azaldı, taşımaya %${nf(s.effort_pct, 2)} emek harcandı; net etki %${nf(s.net_pct, 2)}. ` +
-      `İlk dönemde taşıma olmaz: bir ürünün taşınması için en az iki dönemdir yanlış bölgede durması gerekir.`;
+      (d.paper ? `Makalede (DEPSO): azalma %${nf(d.paper.reduction_pct, 2)}, emek %${nf(d.paper.effort_pct, 2)}, net %${nf(d.paper.net_pct, 2)}. ` : '') +
+      `Taşımalar dönem sonunda yapıldığı için kazanç bir sonraki dönemden itibaren görünür.`;
   };
   sel.addEventListener('change', render); render(); onTheme(render);
 }
