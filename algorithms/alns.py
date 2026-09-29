@@ -122,7 +122,11 @@ class ALNS(BatchingRoutingAlgorithm):
         }
         self.convergence_history = [best.cost]
 
-        for it in range(1, self.max_iterations + 1):
+        it = 0
+        for it in range(1, self._iter_limit(self.max_iterations) + 1):
+            if it > 1 and self._time_up():
+                it -= 1
+                break
             d_op = self._roulette(w_d)                      # 7
             r_op = self._roulette(w_r)                      # 8
             q = self._rng.randint(q_min, q_max)             # 9
@@ -159,7 +163,7 @@ class ALNS(BatchingRoutingAlgorithm):
             if self.verbose and it % 50 == 0:
                 print(f"  [ALNS] iter {it:4d}: best={best.cost:.1f} cur={cur.cost:.1f} T={T:.2f}")
 
-        return self._to_solution(best)                      # 27
+        return self._to_solution(best, it)                  # 27
 
     # ══════════════════════════════════════════════════════════════
     # MALİYET YARDIMCILARI
@@ -351,7 +355,7 @@ class ALNS(BatchingRoutingAlgorithm):
     # ÇIKTI
     # ══════════════════════════════════════════════════════════════
 
-    def _to_solution(self, state: _State) -> Solution:
+    def _to_solution(self, state: _State, iterations: int | None = None) -> Solution:
         batches = []
         for k, idx in enumerate(state.batches):
             b = Batch(batch_id=k, orders=[self._orders[i] for i in idx],
@@ -362,7 +366,7 @@ class ALNS(BatchingRoutingAlgorithm):
             algorithm_name=self.name,
             batches=batches,
             total_travel_distance=sum(b.travel_distance for b in batches),
-            iterations_used=self.max_iterations,
+            iterations_used=self.max_iterations if iterations is None else iterations,
             convergence_history=self.convergence_history,
             extra_info={
                 'route_cache_size': len(self._routes),

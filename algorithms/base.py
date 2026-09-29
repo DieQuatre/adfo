@@ -119,6 +119,27 @@ class BatchingRoutingAlgorithm(ABC):
         print(solution.total_travel_distance)
     """
 
+    # Eşit süre bütçesi (run_batch.py --time-budget). None: iterasyon sınırı
+    # geçerli. Sayı: algoritma bu kadar saniye çalışır; iterasyon sınırı ve
+    # "iyileşme yoksa dur" kuralı devre dışı, iterasyona bağlı çizelgeler
+    # (DEPSO yerel arama eşiği, RBRS-AE eleme oranı) geçen süre oranıyla işler.
+    time_limit: float | None = None
+    UNLIMITED = 10 ** 9
+
+    def _time_up(self, share: float = 1.0) -> bool:
+        """Bütçenin `share` kadarı doldu mu (bütçe yoksa hep False)."""
+        return (self.time_limit is not None
+                and time.perf_counter() - self._t_start >= share * self.time_limit)
+
+    def _progress(self, it: int, max_it: int) -> float:
+        """Çizelgeler için ilerleme oranı [0, 1]."""
+        if self.time_limit is not None:
+            return min(1.0, (time.perf_counter() - self._t_start) / self.time_limit)
+        return it / max_it
+
+    def _iter_limit(self, max_it: int) -> int:
+        return self.UNLIMITED if self.time_limit is not None else max_it
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -143,6 +164,7 @@ class BatchingRoutingAlgorithm(ABC):
         Döndürür: Solution
         """
         t0 = time.perf_counter()
+        self._t_start = t0
         solution = self._solve_impl(orders, warehouse)
         solution.runtime_seconds = time.perf_counter() - t0
         solution.algorithm_name = self.name

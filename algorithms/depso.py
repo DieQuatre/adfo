@@ -154,7 +154,11 @@ class DEPSO(BatchingRoutingAlgorithm):
         self._initialize()
 
         # Adım 6-14: Optimization
-        for it in range(1, self.num_iterations + 1):
+        it = 0
+        for it in range(1, self._iter_limit(self.num_iterations) + 1):
+            if it > 1 and self._time_up():
+                it -= 1
+                break
             self._current_iteration = it
 
             # Adım 6-10: Move each particle
@@ -186,7 +190,7 @@ class DEPSO(BatchingRoutingAlgorithm):
             algorithm_name=self.name,
             batches=self.gbest_batches,
             total_travel_distance=self.gbest_distance,
-            iterations_used=self.num_iterations,
+            iterations_used=it,
             convergence_history=self.convergence_history,
             extra_info={'num_particles': self.num_particles,
                         'route_cache_size': len(self._routes)},
@@ -485,7 +489,7 @@ class DEPSO(BatchingRoutingAlgorithm):
         değerlendirmelerle aynı rota servisiyle (NN + 2-opt) hesaplanır.
         """
         threshold = round(
-            self.max_stag * (1 - self._current_iteration / self.num_iterations)
+            self.max_stag * (1 - self._progress(self._current_iteration, self.num_iterations))
         ) + 1
 
         if not (self.s_stag_gbest > threshold * self._rng.random()):
