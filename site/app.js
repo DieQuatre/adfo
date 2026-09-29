@@ -402,6 +402,10 @@ function renderExplorer() {
 // DİNAMİK YER ATAMASI
 // ════════════════════════════════════════════════════════════════════
 function dynName(d) {
+  const ev = {full: ' · makaledeki ölçüm', algo: ' · sabit gruplarla ölçüm'}[d.summary && d.summary.tdr_eval] || '';
+  return dynBase(d) + ev;
+}
+function dynBase(d) {
   let m0 = d.problem.match(/^kubler_fig10_s(\d)/);
   if (m0) return `Kübler yöntemiyle üretilen veri, senaryo ${m0[1]} (${m0[1] === '1' ? 'yüksek' : 'düşük'} dinamik) · ${d.algorithm}`;
   if (d.problem.startsWith('kubler_s')) return `Eski Kübler veri seti, senaryo ${d.problem.slice(8)} · ${d.algorithm}`;

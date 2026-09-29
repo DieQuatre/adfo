@@ -217,7 +217,8 @@ class DynamicRelocation:
     def run_period(self, period: int, period_orders: list[list[Order]],
                    batch_fn: BatchFn | None = None,
                    batches: list[list[list[Order]]] | None = None,
-                   tdr_scale: float = 1.0) -> PeriodRelocation:
+                   tdr_scale: float = 1.0,
+                   td_fn: Callable[[dict], float] | None = None) -> PeriodRelocation:
         """
         period: biten dönemin (t-1) mutlak indeksi.
         period_orders: o dönemin siparişleri, alt dönemlere bölünmüş.
@@ -225,6 +226,10 @@ class DynamicRelocation:
             gruplanmaz). Yoksa batch_fn ile bir kez gruplanır.
         tdr_scale: dönemin yalnızca bir kısmı çözüldüyse (hızlı deneme)
             Tdr'yi tüm döneme ölçekler; kabul kararında kullanılır.
+        td_fn: verilirse makaledeki tam yöntem: td_fn(taşımalar) siparişleri
+            {ürün: yeni yer} uygulanmış yerleşimle algoritmayla yeniden çözer
+            ve toplam mesafeyi döndürür (boş sözlük = mevcut yerleşim).
+            Td_com = td_fn({}), her öneri için Td_rel = td_fn(öneri).
         """
         res = PeriodRelocation(period=period)
         self._advance_forecaster(period)
@@ -262,7 +267,9 @@ class DynamicRelocation:
         cand = self._feasible(cand)
 
         # Td_com: dönemin siparişleri, bir kez gruplanmış, mevcut yerleşimle
-        if batches is None:
+        if td_fn is not None:
+            batches = [[] for _ in period_orders]           # yaklaşık yol kullanılmaz
+        elif batches is None:
             if batch_fn is None:
                 raise ValueError("batch_fn ya da batches verilmeli")
             batches = [batch_fn(self.remap(sub), self.wh) for sub in period_orders if sub]
@@ -275,6 +282,8 @@ class DynamicRelocation:
             for i in g:
                 groups_of_item.setdefault(i, []).append(gi)
         td_com = sum(td)
+        if td_fn is not None:
+            td_com = td_fn({})
         res.td_before_LU = td_com
 
         # 5.3.4-5.3.5 önerileri sırayla dene
@@ -294,11 +303,15 @@ class DynamicRelocation:
 
             sug.effort = sum(self.wh.distance(mv.src, mv.dst) + self.E_PHY + self.E_ADM
                              for mv in sug.moves)
-            affected = sorted({gi for mv in sug.moves for gi in groups_of_item.get(mv.item, [])})
             new_loc = {mv.item: mv.dst for mv in sug.moves}
-            new_td = {gi: routes.distance([new_loc.get(i, int(self.loc[i])) for i in groups[gi]])
-                      for gi in affected}
-            td_rel = td_com - sum(td[gi] for gi in affected) + sum(new_td.values())
+            if td_fn is not None:
+                new_td = {}
+                td_rel = td_fn(new_loc)
+            else:
+                affected = sorted({gi for mv in sug.moves for gi in groups_of_item.get(mv.item, [])})
+                new_td = {gi: routes.distance([new_loc.get(i, int(self.loc[i])) for i in groups[gi]])
+                          for gi in affected}
+                td_rel = td_com - sum(td[gi] for gi in affected) + sum(new_td.values())
             sug.tdr = td_com - td_rel
 
             if sug.tdr <= 0:

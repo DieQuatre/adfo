@@ -204,3 +204,43 @@ def test_approximation_exact_for_location_blind_batching(dyn):
     assert rows
     for r in rows:
         assert r['tdr_approx'] == pytest.approx(r['tdr_full'], abs=1e-6)
+
+
+# ── Taşıma kazancının ölçümü (tdr_eval) ────────────────────────────────
+
+def test_firstfit_evaluation_gives_same_moves_for_every_algorithm(dyn):
+    """Varsayılan ölçümde taşıma kararı toplama algoritmasından bağımsızdır."""
+    rows_ff, _ = run_experiment(dyn, 'FIRSTFIT', 0, used=1, n_periods=3)
+    rows_dp, _ = run_experiment(dyn, 'DEPSO', 3, used=1, n_periods=3)
+    assert [r['moves'] for r in rows_ff] == [r['moves'] for r in rows_dp]
+    assert any(r['moves'] for r in rows_ff)
+
+
+def test_full_evaluation_calls_solver_per_suggestion(dyn):
+    R = DynamicRelocation(dyn.warehouse, dyn.zones, dyn.initial_locations, dyn.demand, dyn.warmup)
+    calls = []
+
+    def td_fn(moves):
+        calls.append(dict(moves))
+        loc = R.loc.copy()
+        for i, d in moves.items():
+            loc[i] = d
+        from run_dynamic import _with_locs
+        return sum(solve('FIRSTFIT', [_with_locs(o, loc) for o in sub], dyn.warehouse, 0, 0)[0]
+                   for sub in dyn.orders_fn(p)[:1])
+
+    for p in dyn.test_periods[:3]:
+        n0 = len(calls)
+        res = R.run_period(p, dyn.orders_fn(p)[:1], td_fn=td_fn)
+        tested_with_moves = sum(1 for s in res.suggestions if s.moves)
+        assert len(calls) - n0 == 1 + tested_with_moves        # Td_com + öneri başına bir kez
+        assert calls[n0] == {}
+        for s in res.suggestions:
+            if s.accepted:
+                assert s.tdr > 0
+
+
+def test_run_experiment_full_mode(dyn):
+    rows, summary = run_experiment(dyn, 'FIRSTFIT', 0, used=1, n_periods=2,
+                                   tdr_eval='full', eval_subs=1)
+    assert len(rows) == 2 and rows[1]['td_static'] > 0
