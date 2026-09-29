@@ -69,6 +69,26 @@ def from_kubler(scenario: int, loader: DataLoader | None = None) -> DynamicProbl
         orders_fn=orders_fn, subperiods=S)
 
 
+def from_kubler_fig10(scenario: int, seed: int = 0) -> DynamicProblem:
+    """
+    Kübler (2020) §6.3 / Fig. 10 yöntemiyle yeniden üretilmiş veri
+    (core/kubler_generator.py). Dosyaya yazılmaz; tohumdan her seferinde
+    aynı veri üretilir.
+    """
+    from core.kubler_generator import KublerSpec, generate_kubler
+    data = generate_kubler(KublerSpec(scenario=scenario, seed=seed))
+    warmup = TIME_SERIES['num_warmup_periods']
+
+    def orders_fn(period: int) -> list[list[Order]]:
+        return data.period_orders(period)
+
+    return DynamicProblem(
+        name=data.spec.name, warehouse=Warehouse(), demand=data.demand, warmup=warmup,
+        test_periods=list(range(warmup, warmup + TIME_SERIES['num_test_periods'])),
+        zones=data.zones, initial_locations=data.initial_locations.copy(),
+        orders_fn=orders_fn, subperiods=data.spec.n_subperiods)
+
+
 def from_generated(inst) -> DynamicProblem:
     """core.generator.GeneratedInstance → DynamicProblem."""
     from config import GENERATOR as GEN

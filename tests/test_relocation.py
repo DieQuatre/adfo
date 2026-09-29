@@ -157,11 +157,28 @@ def test_run_period_invariants(dyn):
     assert accepted_total > 0, "yüksek dinamiklikte en az bir taşıma beklenir"
 
 
-def test_first_period_has_no_candidates_because_of_o(dyn):
+def test_wrong_class_counter_starts_from_warmup_history(dyn):
+    """o = 2: 'son dönemde de yanlış sınıftaydı' ilk test döneminde de sayılır
+    (makale Tab. 3: 1. test döneminin sonunda taşıma yapılıyor)."""
+    from algorithms.relocation import CLASS_RANK
     R = DynamicRelocation(dyn.warehouse, dyn.zones, dyn.initial_locations, dyn.demand, dyn.warmup)
-    p = dyn.test_periods[0]
-    res = R.run_period(p, dyn.orders_fn(p)[:1], batch_fn=lambda o, w: solve('FIRSTFIT', o, w, 0, 0)[1])
-    assert res.candidates == 0              # o = 2: yanlış sınıfta en az 2 dönem
+    zone_of = {l: CLASS_RANK[c] for c, ls in dyn.zones.items() for l in ls}
+    cur = np.array([zone_of[int(l)] for l in dyn.initial_locations])
+    expect = np.zeros(len(cur), dtype=int)
+    for t in range(dyn.warmup):
+        cls_t, _ = abc_with_limits(dyn.demand[:, t], dyn.warehouse.class_pct)
+        expect = np.where(cls_t != cur, expect + 1, 0)
+    assert (R.wrong_count == expect).all()
+
+
+def test_first_test_period_has_candidates_on_kubler_fig10():
+    from core.dynamic_data import from_kubler_fig10
+    pr = from_kubler_fig10(1)
+    R = DynamicRelocation(pr.warehouse, pr.zones, pr.initial_locations, pr.demand, pr.warmup)
+    p = pr.test_periods[0]
+    res = R.run_period(p, pr.orders_fn(p)[:1], batch_fn=lambda o, w: solve('FIRSTFIT', o, w, 0, 0)[1],
+                       tdr_scale=pr.subperiods)
+    assert res.candidates > 0 and res.accepted > 0
 
 
 def test_run_experiment_reports(dyn):

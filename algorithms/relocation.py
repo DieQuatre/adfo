@@ -175,7 +175,14 @@ class DynamicRelocation:
         for l, r in self.zone_of.items():
             if l not in self.item_at:
                 self.empty[r].add(l)
+        # o eşiği için geçmiş: ısınma dönemlerinde ürünler başlangıç yerinde
+        # durur; "son dönemde de yanlış sınıftaydı" koşulu ilk test döneminin
+        # sonunda da değerlendirilebilsin (makale Tab. 3: 1. dönemde taşıma var).
         self.wrong_count = np.zeros(self.n_items, dtype=np.int32)
+        cur0 = np.array([self.zone_of[int(l)] for l in self.loc])
+        for t in range(warmup):
+            cls_t, _ = abc_with_limits(self.demand[:, t], self.class_pct)
+            self.wrong_count = np.where(cls_t != cur0, self.wrong_count + 1, 0)
 
         # Holt-Winters: ısınma dönemleriyle kurulur, her dönem sonunda güncellenir
         self.forecaster = ItemForecaster()

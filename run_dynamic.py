@@ -16,9 +16,14 @@ Raporlanan (makaledeki gibi, statik mesafeye oranla):
 
 Kullanım:
   python run_dynamic.py --source kubler --scenario 1 --algo DEPSO --jobs 16
+  python run_dynamic.py --source kubler-fig10 --scenario 1 --algo DEPSO --jobs 16
   python run_dynamic.py --source generated --size 5000 --blocks 2 --fill 0.7 \\
       --dynamics yuksek --algo RBRS-AE --jobs 16
   python run_dynamic.py --source kubler --scenario 1 --algo FIRSTFIT --subperiods 4   # hızlı deneme
+
+Kaynaklar: kubler = data/ klasöründeki eski veri seti; kubler-fig10 = makalenin
+§6.3 / Fig. 10 yöntemiyle yeniden üretilen veri (core/kubler_generator.py);
+generated = kendi parametrik üreticimiz.
 
 --subperiods N: her dönemin yalnızca ilk N alt dönemi çözülür (hızlı deneme).
 Bu durumda relocation kazancı N/20 oranında eksik ölçülmesin diye Tdr ölçeklenir.
@@ -43,7 +48,7 @@ from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
 from algorithms.relocation import DynamicRelocation
 from algorithms.routing.route_cache import RouteCache
-from core.dynamic_data import from_generated, from_kubler
+from core.dynamic_data import from_generated, from_kubler, from_kubler_fig10
 
 OUT = Path("results") / "dynamic"
 ALGOS = ('DEPSO', 'RBRS-AE', 'ALNS', 'FIRSTFIT')
@@ -84,6 +89,8 @@ def _solve_task(task):
 def build_problem(a: dict):
     if a['source'] == 'kubler':
         return from_kubler(a['scenario'])
+    if a['source'] == 'kubler-fig10':
+        return from_kubler_fig10(a['scenario'], a['seed'])
     from core.generator import InstanceSpec, generate
     return from_generated(generate(InstanceSpec(a['size'], a['blocks'], a['fill'],
                                                 a['dynamics'], a['seed'])))
@@ -156,7 +163,7 @@ def run_experiment(problem, algo: str, depso_iter: int, used: int | None = None,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--source', choices=['kubler', 'generated'], default='kubler')
+    ap.add_argument('--source', choices=['kubler', 'kubler-fig10', 'generated'], default='kubler')
     ap.add_argument('--scenario', type=int, default=1)
     ap.add_argument('--size', type=int, default=5000)
     ap.add_argument('--blocks', type=int, default=2)
@@ -191,7 +198,7 @@ def main():
                                    args.jobs, pargs, progress=show)
     print(f"\nToplam: azalma {summary['reduction_pct']}%, efor {summary['effort_pct']}%, "
           f"net {summary['net_pct']}%")
-    if args.source == 'kubler':
+    if args.source in ('kubler', 'kubler-fig10'):
         t = config.VALIDATION_TARGETS
         s = args.scenario
         print(f"Makale (senaryo {s}, DEPSO): azalma {t[f'scenario{s}_travel_distance_reduction_pct']}%, "
