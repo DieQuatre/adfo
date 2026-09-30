@@ -44,6 +44,13 @@ def git_state() -> dict:
     return {'commit': commit, 'dirty': bool(files), 'files': files}
 
 
+def speed_note() -> str:
+    from algorithms.routing import fast
+    return ("Rota hesabı: derlenmiş (numba)" if fast.AVAILABLE else
+            "UYARI: numba kurulu değil, rota hesabı yavaş Python yolunda "
+            "(pip install numba); sonuçlar aynı, süre bütçeli koşumda arama daha az olur")
+
+
 def require_clean(allow_dirty: bool) -> dict:
     """Kod commit'lenmemiş değişiklik içeriyorsa koşumu durdur (izin verilmedikçe)."""
     state = git_state()
@@ -54,6 +61,7 @@ def require_clean(allow_dirty: bool) -> dict:
             print(f"    {f}")
         print("Önce commit'le ya da geri al (git status). Yalnızca deneme için: --allow-dirty")
         sys.exit(2)
+    print(speed_note())
     if state['dirty']:
         print(f"UYARI: commit'lenmemiş değişikliklerle koşuluyor ({len(state['files'])} dosya); "
               f"sonuç dosyasına 'dirty' olarak yazılacak.")

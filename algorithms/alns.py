@@ -104,6 +104,8 @@ class ALNS(BatchingRoutingAlgorithm):
         q_max = min(cfg['q_max_abs'], max(q_min, math.ceil(cfg['q_max_frac'] * n)))
         q_min = min(q_min, n)
         q_max = min(q_max, n)
+        # büyük örnekte (n > 600) %5 alt sınırı 30'luk üst sınırı aşar: üst sınır geçerli
+        q_min = min(q_min, q_max)
 
         # 1-3: başlangıç çözümü (regret-2 ile boş çözümden), sıcaklık (16)
         cur = self._repair_regret2(_State([], [], []), list(range(n)))

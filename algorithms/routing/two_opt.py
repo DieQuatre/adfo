@@ -108,8 +108,13 @@ def nn_then_2opt(locations: list[int], warehouse) -> tuple[list[int], float]:
 
     Bu fonksiyon, DEPSO içinde her batch için kullanılır.
     """
+    from algorithms.routing import fast
     from algorithms.routing.nearest_neighbor import nearest_neighbor_route
 
+    if locations:
+        res = fast.route(locations, warehouse)     # derlenmiş, sonuç aynı
+        if res is not None:
+            return res
     route, _ = nearest_neighbor_route(locations, warehouse)
     return two_opt_improve(route, warehouse)
 

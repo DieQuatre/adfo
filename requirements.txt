@@ -6,3 +6,4 @@ plotly>=5.14
 streamlit>=1.28
 tqdm>=4.65
 pytest>=7.0
+numba>=0.61       # rota hesabını ~10 kat hızlandırır; kurulu değilse kod yine çalışır (yavaş)
