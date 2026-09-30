@@ -74,17 +74,31 @@ Wilcoxon'a göre ALNS'nin hem DEPSO'dan hem RBRS-AE'den farkı anlamlı
 
 ```bash
 # 1) Adil kalite karşılaştırması: 35 senaryo, 5 örnek, 5 tohum, sipariş başına 0,5 sn
+#    (Paket 10, rota hızlandırması öncesi; sonuç: results/compare__s5__tpo0.5)
 python run_batch.py --batch all --jobs 16 --seeds 5 --time-per-order 0.5
 python compare_algorithms.py results/compare__s5__tpo0.5
 
-# 2) Hız ölçümü: tek işlem, varsayılan ayarlar, birkaç senaryo
-python run_batch.py --only 50_2_6,100_6_6,150_10_2,200_10_10 --n 3 --jobs 1
-python compare_algorithms.py results/only.json
+# 2) Hız ölçümü: tek işlem, varsayılan ayarlar, birkaç senaryo, --fresh ile
+#    (sonuç: results/hiz_olcumu_tek_islem.json)
+python run_batch.py --only 50_2_6,100_6_6,150_10_2,200_10_10 --n 3 --jobs 1 --fresh
 
-# 3) Kendi ızgaramızda aynısı
-python run_generated.py --jobs 16 --seeds 5 --time-per-order 0.5 --k 50 100
-python compare_algorithms.py results/generated/results__s5__tpo0.5.json
+# 3) Kendi ızgaramız (Paket 11): 4 boyut × 3 koridor yapısı × 6 doluluk × 10 set
+#    × 3 set boyutu (50/100/200) = 2 160 örnek, 5 tohum, sipariş başına 0,05 sn
+python run_generated.py --jobs 16 --seeds 5 --time-per-order 0.05
+python compare_algorithms.py results/generated/results__s5__tpo0.05.json
+
+# 4) Kendi depolarımızda yer değişimi: her boyuttan bir depo, tek geçişli,
+#    %70 doluluk, yüksek dinamik; üç algoritma
+for s in 5000 10000 15000 20000; do for a in DEPSO RBRS-AE ALNS; do
+  python run_dynamic.py --source generated --size $s --blocks 2 --fill 0.7 \
+      --dynamics yuksek --algo $a --jobs 16 --skip-existing
+done; done
 ```
 
-Süre tahmini (1): örnek başına 3 algoritma × 5 tohum × 0,5·k sn; 35 senaryo × 5
-örnek, 16 paralel işlemle yaklaşık 3 saat.
+Neden 0,05 sn? Paket 11'deki derlenmiş rota hesabı (algorithms/routing/fast.py)
+algoritmaları sonuçları değiştirmeden ~10–20 kat hızlandırdı. Sipariş başına
+0,05 sn, 35 senaryo koşumundaki 0,5 sn ile yaklaşık aynı arama miktarı.
+
+Süre tahminleri (16 paralel işlem): (1) ~3 saat; (3) ~3–4 saat; (4) ~4–5 saat.
+(4)'te taşıma kararı first-fit ölçümüyle verildiği için üç algoritma aynı
+taşımaları yapar; fark yalnızca toplama planından gelir (docs/RELOCATION.md).

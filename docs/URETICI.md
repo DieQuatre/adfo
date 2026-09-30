@@ -56,8 +56,21 @@ Izgara: 4 boyut × 3 koridor yapısı × 3 doluluk = **36 depo**. Her depo için
    | orta | 55 | 10 | 10 | 15 | 10 |
    | yüksek | 30 | 15 | 15 | 20 | 20 |
 
+   **Çok satan ↔ az satan dönüşümü** (Kübler 2020 §6.3'teki fikir): en
+   popüler %20'den, popülerlikle orantılı olasılıkla ürünler seçilir
+   (`swap_share`: düşük %5, orta %15, yüksek %30). Seçilen ürünün talebi
+   2.–16. dönemler arasında başlayıp 3–8 dönemde %5'ine iner; eşine (en
+   popüler %20 dışından rastgele bir ürün) aynı sürede, sönen ürünün
+   talebinin 0,7–1,3 katı eklenir. Profil adları `swap_down` / `swap_up`.
+   Bu olmadan az satan bir ürün kendi küçük talebinin birkaç katına çıksa
+   bile A sınıfına ulaşamıyordu; yer değişimi deneyinde kazanç %1'in
+   altında kalıyordu.
+
    Beklenen talep × lognormal gürültü → Poisson ile gerçekleşen satır sayısı.
-5. **Yerleşim.** Isınma döneminin son dönemindeki talebe göre ABC
+5. **Yerleşim.** 1. dönemin talebine göre ABC (`placement_period`; Kübler'deki
+   gibi depo bir kez yerleştirilmiş, sonra 20 dönem boyunca talep değişmiş).
+   Önceki sürümde ısınmanın son dönemi kullanılıyordu; o zaman ısınmadaki
+   değişimler yerleşime zaten yansıyordu. Yerleşim kuralı: ABC
    (%5 / %15 / %80). A ürünleri kapıya en yakın %5'lik lokasyon bölgesine,
    B sonraki %15'e, C kalanına; bölge içinde rastgele. Doluluk %100'ün
    altında olduğu için her bölgede boş yer kalır (relocation için gerekli).
@@ -65,6 +78,22 @@ Izgara: 4 boyut × 3 koridor yapısı × 3 doluluk = **36 depo**. Her depo için
    siparişlere bölünür: sipariş başına 1–4 farklı ürün, satır başına 1–4
    adet, toplam ağırlık kapasiteyi (100 WU) aşmaz. Siparişler 20 alt döneme
    eşit dağıtılır.
+
+Bu iki değişiklik (Paket 11) aynı spec'in ürettiği talebi ve siparişleri
+değiştirdi; önceki üretici sürümüyle alınan sonuçlar repodan kaldırıldı.
+
+Yer değişimi deneyinde etkisi (5 000 lokasyon, tek geçişli, %70, FIRSTFIT,
+9 dönem): önce yüksek dinamikte azalma %0,56 / net %−0,55. Şimdi, üç tohumun
+ortalaması:
+
+| Dinamiklik | Mesafe azalması | Taşıma emeği | Net |
+|---|---|---|---|
+| düşük | %4,3 | %2,0 | %2,3 |
+| orta | %6,2 | %3,0 | %3,2 |
+| yüksek | %6,5 | %3,8 | %2,6 |
+
+Azalma ve emek dinamiklikle artıyor; net kazanç ortada en yüksek, çünkü
+yüksek dinamikte ürünler daha sık yer değiştirmek zorunda kalıyor.
 
 Zaman yapısı: 12 ısınma dönemi (Holt-Winters tahmininin bir tam sezonu
 görmesi için) + 9 test dönemi. Algoritma karşılaştırmasında sipariş setleri
@@ -80,10 +109,10 @@ Her depo için `meta.json` / `instances/index.csv` içinde raporlanır:
   Poisson sıfırları payı artırır.
 - `structural_class_change_test_horizon`: test ufku boyunca BEKLENEN talebe
   göre sınıfı değişen ürün oranı. Dinamiklik seviyesini ayıran ölçü budur
-  (10 000 lokasyon, %70 doluluk: düşük ≈ %2, orta ≈ %7, yüksek ≈ %9).
+  (10 000 lokasyon, %70 doluluk: düşük ≈ %3, orta ≈ %9, yüksek ≈ %13).
 - `observed_class_change_per_period`: gerçekleşen talebe göre dönemden
   döneme değişim. Poisson gürültüsü nedeniyle seviyeler arasında fark
-  küçüktür (≈ %19–20).
+  küçüktür (≈ %18–20).
 
 ## Grup kararı bekleyen değerler
 

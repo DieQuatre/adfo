@@ -203,6 +203,8 @@ def main():
     ap.add_argument('--subperiods', type=int, default=None)
     ap.add_argument('--periods', type=int, default=None, help="yalnızca ilk N test dönemi")
     ap.add_argument('--jobs', type=int, default=1)
+    ap.add_argument('--skip-existing', action='store_true',
+                    help="sonuç dosyası zaten varsa koşma (döngüyle koşulan deneyler yarıda kesilirse)")
     ap.add_argument('--tdr-eval', choices=['firstfit', 'algo', 'full'], default='firstfit',
                     help="relocation kazancının nasıl ölçüleceği (bkz. run_experiment)")
     ap.add_argument('--eval-subperiods', type=int, default=4,
@@ -218,7 +220,12 @@ def main():
     used = min(args.subperiods or S, S)
     tag = (f"{problem.name}_{args.algo}" + (f"_sub{used}" if used < S else "")
            + {'firstfit': '', 'algo': '_tdralgo', 'full': '_tdrfull'}[args.tdr_eval])
+    if args.skip_existing and (OUT / f"{tag}.json").exists():
+        print(f"{tag}: sonuç zaten var, atlanıyor.")
+        return
     n_per = len(problem.test_periods[:args.periods] if args.periods else problem.test_periods)
+    from core.experiment import speed_note
+    print(speed_note())
     print(f"{problem.name}: {n_per} dönem × {used}/{S} alt dönem, algoritma {args.algo}, "
           f"{args.jobs} paralel işlem")
     t0 = time.perf_counter()

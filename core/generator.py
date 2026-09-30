@@ -17,7 +17,9 @@ Adımlar
 2. Ürünler:   ürün sayısı = doluluk × lokasyon; ağırlık U(w_min, w_max)
 3. Popülerlik: güç yasası, en popüler %20'nin payı = top20_share
 4. Talep:     her ürüne bir profil (durağan / artan / azalan / mevsimsel /
-              ani değişim); karışım dinamiklik seviyesine göre
+              ani değişim); karışım dinamiklik seviyesine göre. Ayrıca çok
+              satan ↔ az satan dönüşümü: popüler ürünlerin bir kısmı söner,
+              yerlerine az satan ürünler benzer büyüklüğe çıkar (swap_share)
 5. Yerleşim:  ısınma döneminin son talebine göre ABC; A ürünleri kapıya en
               yakın bölgeye, C en uzağa; bölge içinde rastgele
 6. Siparişler: her dönemin gerçekleşen satırları siparişlere bölünür,
@@ -189,13 +191,14 @@ def generate(spec: InstanceSpec) -> GeneratedInstance:
 
     # 4) talep profilleri
     profiles, multipliers = _profiles(spec, n_items, P)
+    _apply_swaps(spec, base, multipliers, profiles, P)
     expected = base[:, None] * multipliers
     noise = spec.rng(4).lognormal(0.0, GEN['irregular_sigma'], expected.shape)
     demand = spec.rng(5).poisson(expected * noise)
 
     # 5) yerleşim
     zones = wh.assign_locations_to_classes()
-    ref_period = GEN['warmup_periods'] - 1
+    ref_period = GEN['placement_period']
     init_class = _abc(demand[:, ref_period], wh.class_pct)
     locations = np.empty(n_items, dtype=np.int64)
     rng = spec.rng(6)
@@ -259,6 +262,41 @@ def _profiles(spec: InstanceSpec, n: int, P: int) -> tuple[list[str], np.ndarray
                  else rng.uniform(*GEN['shock_down']))
             M[i, t0:] = f
     return [PROFILES[k] for k in kinds], M
+
+
+def _apply_swaps(spec: InstanceSpec, base: np.ndarray, M: np.ndarray,
+                 profiles: list[str], P: int) -> None:
+    """
+    Çok satan ↔ az satan dönüşümü (yerinde değiştirir). En popüler %20'den
+    swap_share oranında ürün popülerlikle orantılı seçilir; her birinin talebi t0'dan başlayarak
+    `süre` dönemde swap_floor düzeyine iner. Eşine (en popüler %20 dışından
+    rastgele bir ürün) aynı sürede sönen ürünün talebi × U(swap_level) kadar
+    talep eklenir. Kübler (2020) §6.3'teki temel ürün / karşı ürün fikri.
+    """
+    share = GEN['swap_share'].get(spec.dynamics, 0.0)
+    n = len(base)
+    top = max(1, int(round(0.2 * n)))
+    n_pairs = int(round(share * top))
+    if n_pairs == 0 or n - top < n_pairs:
+        return
+    rng = spec.rng(10)
+    ranked = np.argsort(-base, kind='stable')
+    # Kübler'deki gibi en çok satanların sönme olasılığı en yüksek:
+    # popülerlikle orantılı, iadesiz seçim
+    w = base[ranked[:top]]
+    fading = rng.choice(ranked[:top], size=n_pairs, replace=False, p=w / w.sum())
+    rising = rng.choice(ranked[top:], size=n_pairs, replace=False)
+    t = np.arange(P, dtype=float)
+    floor = GEN['swap_floor']
+    for bi, ci in zip(fading, rising):
+        t0 = int(rng.integers(GEN['swap_start'][0], GEN['swap_start'][1] + 1))
+        dur = int(rng.integers(GEN['swap_duration'][0], GEN['swap_duration'][1] + 1))
+        ramp = np.clip((t - t0) / dur, 0.0, 1.0)
+        level = rng.uniform(*GEN['swap_level'])
+        M[bi] = M[bi] * (1.0 - ramp * (1.0 - floor))
+        M[ci] = M[ci] + ramp * level * base[bi] / base[ci]
+        profiles[bi] = 'swap_down'
+        profiles[ci] = 'swap_up'
 
 
 def _abc(values: np.ndarray, class_pct: dict) -> list[str]:
@@ -385,5 +423,6 @@ def _stats(inst: GeneratedInstance) -> dict:
         'structural_class_change_per_period': round(float(np.mean(s_per)), 4),
         'structural_class_change_test_horizon': round(s_hor, 4),
         'observed_class_change_per_period': round(float(np.mean(o_per)), 4),
-        'profile_counts': {p: inst.profiles.count(p) for p in PROFILES},
+        'profile_counts': {p: inst.profiles.count(p)
+                           for p in PROFILES + ('swap_down', 'swap_up')},
     }

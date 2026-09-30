@@ -8,8 +8,11 @@ Siteye elle sayı girilmez; deneyler koşulduktan sonra bu komut çalıştırıl
     python site_data.py --races      # + yarış animasyonları için örnek rotalar (yavaş)
 
 Topladığı kaynaklar (hangisi varsa):
-  results/generated/checkpoints/*.json   üretici deneyleri (run_generated.py)
+  results/generated/checkpoints/*.json   üretici deneyleri (run_generated.py); birden çok
+                                          protokol varsa en çok örneği olan (--protocol ile seçilir)
   results/batch_*.json                    Kübler referans doğrulaması (run_batch.py)
+  results/compare*/                       eşit süreli, çok tohumlu karşılaştırma (run_batch.py)
+  results/generated/results__*.json       aynısı, kendi ızgaramızda (run_generated.py)
   results/dynamic/*.json                  dinamik yer ataması (run_dynamic.py)
 
 Yeni bir eksen (ör. 30 000 lokasyon, %40 doluluk, 300 sipariş) ile koşulan
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import random
 import subprocess
 import sys
@@ -54,9 +58,24 @@ def _git_commit() -> str:
         return 'bilinmiyor'
 
 
-def generated_records() -> list[dict]:
+def _protocol_tag(name: str) -> str:
+    """'S5000_..__k50__set0__d500__s5__tpo0.05.json' → '__s5__tpo0.05' ('' eski tek tohumlu)."""
+    stem = name[:-5] if name.endswith('.json') else name
+    rest = stem.split('__d', 1)[1] if '__d' in stem else ''
+    return rest[rest.index('__'):] if '__' in rest else ''
+
+
+def generated_records(protocol: str | None = None) -> tuple[list[dict], str]:
+    """Tek bir protokolün örnekleri (protokoller aynı tabloya karışmaz)."""
+    files = sorted((ROOT / "results" / "generated" / "checkpoints").glob("*.json"))
+    if not files:
+        return [], ''
+    tags = Counter(_protocol_tag(p.name) for p in files)
+    tag = protocol if protocol is not None else max(tags, key=lambda t: (tags[t], t != ''))
     out = []
-    for p in sorted((ROOT / "results" / "generated" / "checkpoints").glob("*.json")):
+    for p in files:
+        if _protocol_tag(p.name) != tag:
+            continue
         r = json.loads(p.read_text(encoding='utf-8'))
         spec = r['spec']
         out.append({
@@ -68,6 +87,25 @@ def generated_records() -> list[dict]:
             'res': {a: {'td': round(r[a]['td'], 1), 'rt': round(r[a]['rt'], 2),
                         'b': r[a]['batches']} for a in ALGOS + BASELINES if a in r},
         })
+    return out, tag
+
+
+def comparison_records() -> list[dict]:
+    """Eşit süreli, çok tohumlu karşılaştırmaların özeti (compare_algorithms.summarize)."""
+    from compare_algorithms import load, summarize
+    sources = [(p, 'kubler') for p in sorted((ROOT / "results").glob("compare*")) if p.is_dir()]
+    sources += [(p, 'grid') for p in sorted((ROOT / "results" / "generated").glob("results__*.json"))]
+    out = []
+    for path, kind in sources:
+        try:
+            inst, meta = load(path)
+        except SystemExit:
+            continue
+        if not inst:
+            continue
+        s = summarize(inst, meta)
+        s.update({'id': path.name, 'kind': kind})
+        out.append(s)
     return out
 
 
@@ -101,15 +139,29 @@ def _paper_dynamic(problem: str):
 
 
 def dynamic_records() -> list[dict]:
+    """
+    Dinamik deneyler. Grupları sabit tutan eski ölçüm (_tdralgo) sitede
+    gösterilmez: DEPSO gibi konuma göre gruplayan algoritmalarda kazancı
+    olduğundan çok küçük ölçer (docs/RELOCATION.md). Sıra: makaledeki ölçümle
+    yapılan Kübler koşumları, diğer Kübler koşumları, kendi depolarımız.
+    """
     out = []
-    files = sorted((ROOT / "results" / "dynamic").glob("*.json"),
-                   key=lambda p: (not p.name.startswith('kubler_fig10'), p.name.lower()))
-    for p in files:
+
+    def order(p):
+        n = p.stem
+        return (not n.endswith('_tdrfull'), not n.startswith('kubler_fig10'), n.lower())
+
+    for p in sorted((ROOT / "results" / "dynamic").glob("*.json"), key=order):
+        if p.stem.endswith('_tdralgo'):
+            continue
         d = json.loads(p.read_text(encoding='utf-8'))
         if 'periods' not in d:
             continue
+        summary = dict(d['summary'])
+        summary.setdefault('tdr_eval', d.get('tdr_eval') or
+                           ('full' if p.stem.endswith('_tdrfull') else 'firstfit'))
         out.append({'problem': d['problem'], 'algorithm': d['algorithm'],
-                    'summary': d['summary'], 'paper': _paper_dynamic(d['problem']),
+                    'summary': summary, 'paper': _paper_dynamic(d['problem']),
                     'periods': [{k: r[k] for k in ('period', 'reduction_pct', 'effort_pct',
                                                    'net_pct', 'accepted', 'tested')}
                                 for r in d['periods']]})
@@ -186,6 +238,8 @@ RACE_EXAMPLES = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--races', action='store_true', help='örnek yarışları yeniden hesapla')
+    ap.add_argument('--protocol', default=None,
+                    help="üretici deneylerinden hangi protokol (ör. __s5__tpo0.05); varsayılan: en çok örneği olan")
     args = ap.parse_args()
     SITE_DATA.mkdir(parents=True, exist_ok=True)
     races_file = SITE_DATA / "races.json"
@@ -197,18 +251,22 @@ def main():
         print(f"  {len(races)} yarış hesaplandı ({time.perf_counter() - t0:.0f}s)")
     races = json.loads(races_file.read_text(encoding='utf-8'))
 
+    records, tag = generated_records(args.protocol)
     catalog = {
         'generated_at': time.strftime('%Y-%m-%d %H:%M'),
         'git_commit': _git_commit(),
         'algorithms': ALGOS, 'baselines': BASELINES, 'dimensions': DIMENSIONS,
-        'records': generated_records(),
+        'records': records,
+        'records_protocol': tag,
+        'comparisons': comparison_records(),
         'reference': reference_records(),
         'dynamic': dynamic_records(),
         'races': races,
     }
     js = "window.CATALOG = " + json.dumps(catalog, ensure_ascii=False, separators=(',', ':')) + ";\n"
     (SITE_DATA / "catalog.js").write_text(js, encoding='utf-8')
-    print(f"site/data/catalog.js: {len(catalog['records'])} deney örneği, "
+    print(f"site/data/catalog.js: {len(catalog['records'])} deney örneği (protokol '{tag or 'tek tohum'}'), "
+          f"{len(catalog['comparisons'])} karşılaştırma, "
           f"{len(catalog['reference'])} referans senaryo, {len(catalog['dynamic'])} dinamik deney, "
           f"{len(races)} yarış ({len(js) // 1024} KB)")
 

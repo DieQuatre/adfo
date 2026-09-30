@@ -158,9 +158,10 @@ GENERATOR = {
     # ── Deney ızgarası (Emre Hoca toplantısı, 2026-08-17) ──────────────
     'grid_sizes': [5000, 10000, 15000, 20000],   # hedef lokasyon sayısı
     'grid_blocks': [1, 2, 3],                    # 1 geçişsiz, 2 tek geçişli, 3 iki geçişli
-    'grid_fills': [0.9, 0.7, 0.5],               # doluluk oranı (grup kararı)
+    'grid_fills': [0.9, 0.8, 0.7, 0.6, 0.5, 0.4],  # doluluk oranı (iki öneri birlikte)
     'order_sets_per_warehouse': 10,              # her depo için sipariş seti
-    'order_set_size': 100,                       # bir setteki sipariş sayısı (grup kararı)
+    'order_set_size': 100,                       # tek boyut gerektiğinde (site yarışları)
+    'order_set_sizes': [50, 100, 200],           # ızgarada koşulan set boyutları
 
     # ── Depo geometrisi ────────────────────────────────────────────────
     # Koridor derinliği sabit, depo büyüdükçe koridor sayısı artar.
@@ -181,6 +182,12 @@ GENERATOR = {
     'season_length': 12,
     'subperiods': 20,
 
+    # Başlangıç yerleşimi hangi dönemin talebine göre (ABC). Kübler'deki gibi
+    # 1. dönem (0): depo bir kez yerleştirilmiş, sonra 20 dönem boyunca talep
+    # değişmiş. Eskiden ısınmanın son dönemiydi (11); o zaman ısınmadaki
+    # değişimler yerleşime zaten yansıyor, test döneminde düzeltilecek az şey kalıyordu.
+    'placement_period': 0,
+
     # ── Talep profilleri ───────────────────────────────────────────────
     'irregular_sigma': 0.10,      # çarpımsal gürültü (lognormal σ)
     'trend_total_change': (0.5, 1.5),   # ufuk boyunca göreli değişim aralığı
@@ -194,6 +201,14 @@ GENERATOR = {
         'yuksek': {'stable': 0.30, 'up': 0.15, 'down': 0.15, 'seasonal': 0.20, 'shock': 0.20},
     },
     'default_dynamics': 'orta',
+    # Çok satan ↔ az satan dönüşümü (Kübler 2020 §6.3'teki fikir): en popüler
+    # %20'den seçilen ürünlerin talebi söner, her birinin yerine rastgele seçilen
+    # az satan bir ürün benzer büyüklüğe çıkar. Oran: en popüler %20'nin kaçı.
+    'swap_share': {'dusuk': 0.05, 'orta': 0.15, 'yuksek': 0.30},
+    'swap_start': (2, 16),        # dönüşümün başladığı dönem (test dönemleri 12-20)
+    'swap_duration': (3, 8),      # sönme / yükselme süresi (dönem)
+    'swap_floor': 0.05,           # sönen ürünün kalan talep oranı
+    'swap_level': (0.7, 1.3),     # yükselen ürünün hedefi: sönenin talebi × bu
 }
 
 

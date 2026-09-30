@@ -1,6 +1,6 @@
 (function () {
 'use strict';
-const C = window.CATALOG || {records: [], reference: [], dynamic: [], races: [], dimensions: [], algorithms: []};
+const C = window.CATALOG || {records: [], reference: [], dynamic: [], races: [], dimensions: [], algorithms: [], comparisons: []};
 const ALGOS = C.algorithms && C.algorithms.length ? C.algorithms : ['DEPSO', 'RBRS-AE', 'ALNS'];
 const SERIES = {'DEPSO': '--s1', 'RBRS-AE': '--s2', 'ALNS': '--s3'};
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -402,7 +402,7 @@ function renderExplorer() {
 // DİNAMİK YER ATAMASI
 // ════════════════════════════════════════════════════════════════════
 function dynName(d) {
-  const ev = {full: ' · makaledeki ölçüm', algo: ' · sabit gruplarla ölçüm'}[d.summary && d.summary.tdr_eval] || '';
+  const ev = {full: ' · makaledeki ölçüm yöntemiyle', algo: ' · sabit gruplarla ölçüm'}[d.summary && d.summary.tdr_eval] || '';
   return dynBase(d) + ev;
 }
 function dynBase(d) {
@@ -430,6 +430,76 @@ function initDynamic() {
       `Taşımalar dönem sonunda yapıldığı için kazanç bir sonraki dönemden itibaren görünür.`;
   };
   sel.addEventListener('change', render); render(); onTheme(render);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ADİL KARŞILAŞTIRMA (eşit süre, çok tohum)
+// ════════════════════════════════════════════════════════════════════
+const CMP_BY = {
+  k: {label: 'Sipariş sayısı', fmt: v => `${v} sipariş`},
+  n_maxol: {label: 'Siparişteki en fazla satır', fmt: v => `en çok ${v} satır`},
+  size: {label: 'Depo boyutu', fmt: v => `${nf(+v)} lok.`},
+  blocks: {label: 'Koridor yapısı', fmt: v => dimValueLabel('blocks', v)},
+  fill: {label: 'Doluluk', fmt: v => `%${v}`},
+};
+function cmpName(c) {
+  const src = c.kind === 'kubler' ? "Kübler'in 35 senaryosu" : 'Kendi ürettiğimiz depolar';
+  return `${src} · ${nf(c.n)} örnek × ${c.seeds} tohum`;
+}
+function cmpBudget(c) {
+  const p = c.protocol || {};
+  if (p.time_per_order) return `sipariş başına ${nf(p.time_per_order, 2)} sn`;
+  if (p.time_budget) return `örnek başına ${nf(p.time_budget, 0)} sn`;
+  return 'iterasyon sınırıyla (süre eşit değil)';
+}
+function initComparison() {
+  const sel = document.getElementById('cmpSel'), bySel = document.getElementById('cmpBy'), box = document.getElementById('cmpBox');
+  const list = C.comparisons || [];
+  if (!list.length) { box.innerHTML = '<div class="empty">Henüz eşit süreli karşılaştırma sonucu yok.</div>'; return; }
+  list.forEach((c, i) => sel.insertAdjacentHTML('beforeend', `<option value="${i}">${esc(cmpName(c))}</option>`));
+  const fillBy = c => {
+    const keep = bySel.value;
+    bySel.innerHTML = Object.keys(c.gap_by || {}).filter(k => CMP_BY[k])
+      .map(k => `<option value="${k}">${esc(CMP_BY[k].label)}</option>`).join('');
+    if ([...bySel.options].some(o => o.value === keep)) bySel.value = keep;
+  };
+  const render = () => {
+    const c = list[+sel.value || 0];
+    // en iyi algoritma payları
+    const algs = ['DEPSO', 'RBRS-AE', 'ALNS'], tot = c.n || 1;
+    document.getElementById('cmpWinsLabel').innerHTML = `${nf(c.n)} örneğin kaçında en kısa yolu hangi algoritma buldu: ` +
+      algs.map(a => `<span class="dot" style="--c:var(${SERIES[a]})"></span>${esc(a)} ${nf(c.wins[a] || 0)}`).join(' &nbsp; ');
+    document.getElementById('cmpWins').innerHTML = algs.map(a => {
+      const w = c.wins[a] || 0, pct = 100 * w / tot;
+      const txt = pct >= 22 ? `${esc(a)} %${nf(pct, 0)}` : pct >= 8 ? `%${nf(pct, 0)}` : '';
+      return pct > 0 ? `<span style="width:${pct}%;background:var(${SERIES[a]})" title="${esc(`${a}: ${w} örnek`)}">${txt}</span>` : '';
+    }).join('');
+    // ikili karşılaştırmalar
+    document.getElementById('cmpPairs').innerHTML = c.pairs.map(p => {
+      const better = p.diff_pct < 0, d = nf(Math.abs(p.diff_pct), 2);
+      const sig = p.p != null && p.p < 0.05;
+      const pTxt = p.p == null ? '' : p.p < 0.001 ? 'p < 0,001' : `p = ${nf(p.p, 3)}`;
+      return `<li><b>${esc(p.a)} – ${esc(p.b)}:</b> ${esc(p.a)} ortalama <b>%${d} daha ${better ? 'kısa' : 'uzun'}</b> yol buldu; ` +
+        `${nf(p.a_better + p.b_better)} örneğin ${nf(p.a_better)} tanesinde ${esc(p.a)}, ${nf(p.b_better)} tanesinde ${esc(p.b)} önde.` +
+        `<span class="sig ${sig ? 'yes' : ''}">${sig ? 'fark anlamlı' : 'şans eseri olabilir'}${pTxt ? ' · ' + pTxt : ''}</span></li>`;
+    }).join('');
+    // kırılım
+    const key = bySel.value, g = (c.gap_by || {})[key];
+    if (g) {
+      const groups = Object.keys(g).sort((a, b) => (+a) - (+b)).map(v => ({label: CMP_BY[key].fmt(v), values: g[v]}));
+      groupedBars(box, groups, algs.map(a => ({key: a, label: a, color: `var(${SERIES[a]})`})),
+                  {fmt: v => '%' + nf(v, 1), yLabel: 'Örnekteki en iyi sonuca göre ortalama fark (%) · düşük daha iyi', aria: 'Kırılıma göre algoritmalar'});
+    } else box.innerHTML = '';
+    const rt = c.runtime || {};
+    document.getElementById('cmpHeadline').textContent =
+      `Her algoritmaya ${cmpBudget(c)} süre verildi. ` +
+      `"Anlamlı" etiketi, farkın bu kadar örnekte şansla ortaya çıkma olasılığının %5'in altında olduğunu söyler (Wilcoxon testi). ` +
+      (c.protocol && (c.protocol.time_per_order || c.protocol.time_budget) ? '' :
+        `Ortalama süreler: ${algs.map(a => `${a} ${nf(rt[a] || 0, 1)} sn`).join(', ')}.`);
+  };
+  sel.addEventListener('change', () => { fillBy(list[+sel.value || 0]); render(); });
+  bySel.addEventListener('change', render);
+  fillBy(list[0]); render(); onTheme(render);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -468,7 +538,7 @@ function initReference() {
 // ════════════════════════════════════════════════════════════════════
 function init() {
   drawIllustrations(); onTheme(drawIllustrations);
-  initRace(); initExplorer(); initDynamic(); initReference();
+  initRace(); initExplorer(); initComparison(); initDynamic(); initReference();
   document.getElementById('stamp').textContent =
     `Veriler ${C.generated_at || '—'} tarihinde, kod sürümü ${C.git_commit || '—'} ile üretildi · ${nf(C.records.length)} deney örneği.`;
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawIllustrations, 120); });

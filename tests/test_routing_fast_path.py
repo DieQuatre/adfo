@@ -56,3 +56,44 @@ def test_fast_path_identical_to_reference(setup, size):
         o_fast = two_opt_improve(r_fast, wh)
         o_ref = _two_opt_slow(r_ref, wh, 30, 2)
         assert o_fast[0] == o_ref[0] and o_fast[1] == o_ref[1]
+
+
+# ── Derlenmiş (numba) yol ─────────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def orders400():
+    wh = Warehouse()
+    orders = DataLoader().load_orders(1, 1, 1).orders[:400]
+    return wh, orders
+
+
+def test_compiled_route_identical_to_python(orders400):
+    """fast.route, Python NN + 2-opt ile birebir aynı rota ve mesafeyi vermeli."""
+    from algorithms.routing import fast
+    if not fast.AVAILABLE:
+        pytest.skip("numba kurulu değil")
+    wh, orders = orders400
+    wh.build_problem_matrix(orders)
+    locs = [l.location for o in orders for l in o.orderlines]
+    rng = random.Random(11)
+    for _ in range(1500):
+        k = rng.choice([1, 2, 3, 4, 5, 9, 20, 45, 90])
+        key = frozenset(rng.sample(locs, min(k, len(locs))))
+        r1, _ = nearest_neighbor_route(list(key), wh)
+        r1, d1 = two_opt_improve(r1, wh)
+        r2, d2 = fast.route(list(key), wh)
+        assert r1 == r2 and d1 == d2
+
+
+def test_algorithms_identical_with_and_without_compiled_routes(orders400, monkeypatch):
+    from algorithms.routing import fast
+    if not fast.AVAILABLE:
+        pytest.skip("numba kurulu değil")
+    from core.experiment import make_algorithms
+    wh, orders = orders400[0], orders400[1][:40]
+    with_fast = {n: a.solve(orders, wh).total_travel_distance
+                 for n, a in make_algorithms(5, 30).items()}
+    monkeypatch.setattr(fast, 'AVAILABLE', False)
+    without = {n: a.solve(orders, wh).total_travel_distance
+               for n, a in make_algorithms(5, 30).items()}
+    assert with_fast == without

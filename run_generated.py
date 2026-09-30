@@ -105,7 +105,7 @@ def main():
     ap.add_argument('--blocks', type=int, nargs='*', default=GEN['grid_blocks'])
     ap.add_argument('--fills', type=float, nargs='*', default=GEN['grid_fills'])
     ap.add_argument('--sets', type=int, default=GEN['order_sets_per_warehouse'])
-    ap.add_argument('--k', type=int, nargs='*', default=[GEN['order_set_size']])
+    ap.add_argument('--k', type=int, nargs='*', default=GEN['order_set_sizes'])
     ap.add_argument('--dynamics', default=GEN['default_dynamics'])
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--depso-iter', type=int, default=config.DEPSO['num_iterations'])

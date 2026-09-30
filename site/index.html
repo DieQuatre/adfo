@@ -20,6 +20,7 @@
       <a href="#algoritmalar">Algoritmalar</a>
       <a href="#yaris">Yarış</a>
       <a href="#deneyler">Deneyler</a>
+      <a href="#karsilastirma">Karşılaştırma</a>
       <a href="#yer-degisimi">Yer değişimi</a>
       <a href="#dogrulama">Doğrulama</a>
       <a href="#kendin-dene">Kendin dene</a>
@@ -117,6 +118,21 @@
     <div class="chartbox" id="chartbox"></div>
     <p class="headline" id="headline"></p>
     <details><summary>Tabloyu göster</summary><div class="tablewrap" id="tablewrap"></div></details>
+  </section>
+
+  <section class="wrap" id="karsilastirma">
+    <p class="eyebrow">Adil karşılaştırma</p>
+    <h2>Aynı süre verilince hangisi daha kısa yol buluyor?</h2>
+    <p class="muted">Üç algoritmaya her örnekte aynı süre verildi ve her örnek birkaç farklı başlangıçla (tohum) çözüldü. Böylece bir algoritmanın yalnızca daha uzun çalıştığı için önde olup olmadığı ve farkın şans eseri olup olmadığı ayırt edilebiliyor.</p>
+    <div class="viewbar">
+      <label class="inline" for="cmpSel">Deney <select id="cmpSel"></select></label>
+      <label class="inline" for="cmpBy">Kırılım <select id="cmpBy"></select></label>
+    </div>
+    <p class="muted small" id="cmpWinsLabel"></p>
+    <div class="winbar" id="cmpWins"></div>
+    <ul class="pairs" id="cmpPairs"></ul>
+    <div class="chartbox" id="cmpBox"></div>
+    <p class="headline" id="cmpHeadline"></p>
   </section>
 
   <section class="wrap" id="yer-degisimi">

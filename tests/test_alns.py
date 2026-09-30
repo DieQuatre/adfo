@@ -132,3 +132,12 @@ def test_best_never_worsens():
 def test_unknown_override_rejected():
     with pytest.raises(TypeError):
         ALNS(sigma9=1)
+
+
+def test_large_instance_destroy_size_bounds():
+    """n > 600'de %5 alt sınırı 30'luk üst sınırı aşıyordu (randint hatası)."""
+    from core.generator import InstanceSpec, generate
+    inst = generate(InstanceSpec(20000, 2, 0.7, 'orta', 0))
+    orders = [o for sub in inst.period_orders(12) for o in sub][:650]
+    sol = ALNS(seed=1, max_iterations=3).solve(orders, inst.warehouse)
+    assert sorted(o.order_id for b in sol.batches for o in b.orders) == sorted(o.order_id for o in orders)

@@ -125,3 +125,35 @@ def test_invalid_spec_rejected():
         generate(InstanceSpec(5000, 1, 0.5, 'cok_yuksek', 0))
     with pytest.raises(ValueError):
         generate(InstanceSpec(5000, 1, 1.5, 'orta', 0))
+
+
+# ── Çok satan ↔ az satan dönüşümü ──────────────────────────────────────
+
+def test_swap_pairs_fast_fade_slow_rise():
+    inst = generate(InstanceSpec(5000, 2, 0.7, 'yuksek', 0))
+    down = [i for i, p in enumerate(inst.profiles) if p == 'swap_down']
+    up = [i for i, p in enumerate(inst.profiles) if p == 'swap_up']
+    top = int(round(0.2 * inst.num_items))
+    assert len(down) == len(up) == round(GEN['swap_share']['yuksek'] * top)
+    E = inst.expected
+    first = E[:, 0]
+    rank = np.argsort(-first, kind='stable')
+    popular = set(rank[:top].tolist())
+    # sıralama beklenen talebin 1. dönemine göre (profiller biraz oynatır)
+    assert np.mean([i in popular for i in down]) > 0.9     # sönenler popülerlerden
+    assert np.mean([i not in popular for i in up]) > 0.9   # yükselenler az satanlardan
+    last = E[:, -1]
+    assert np.median(last[down] / first[down]) < 0.3  # sönmüş
+    assert np.median(last[up] / first[up]) > 5        # yükselmiş
+
+
+def test_swap_share_by_dynamics():
+    counts = [generate(InstanceSpec(5000, 1, 0.7, d, 0)).profiles.count('swap_down')
+              for d in ('dusuk', 'orta', 'yuksek')]
+    assert counts[0] < counts[1] < counts[2]
+
+
+def test_placement_uses_configured_period(small):
+    from core.generator import _abc
+    cls = _abc(small.demand[:, GEN['placement_period']], small.warehouse.class_pct)
+    assert list(cls) == small.initial_class
