@@ -224,7 +224,7 @@ def main():
         print(f"{tag}: sonuç zaten var, atlanıyor.")
         return
     n_per = len(problem.test_periods[:args.periods] if args.periods else problem.test_periods)
-    from core.experiment import speed_note
+    from core.experiment import git_state, speed_note
     print(speed_note())
     print(f"{problem.name}: {n_per} dönem × {used}/{S} alt dönem, algoritma {args.algo}, "
           f"{args.jobs} paralel işlem")
@@ -254,6 +254,7 @@ def main():
         'problem': problem.name, 'algorithm': args.algo, 'subperiods_used': used,
         'depso_iter': args.depso_iter, 'config': config.DYNAMIC_STORAGE,
         'tdr_eval': args.tdr_eval,
+        'git': git_state(),
         'eval': ({'subperiods': args.eval_subperiods, 'depso_iter': args.eval_iter}
                  if args.tdr_eval == 'full' else None),
         'summary': summary, 'periods': rows}, indent=1), encoding='utf-8')

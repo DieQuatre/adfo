@@ -97,3 +97,28 @@ def test_algorithms_identical_with_and_without_compiled_routes(orders400, monkey
     without = {n: a.solve(orders, wh).total_travel_distance
                for n, a in make_algorithms(5, 30).items()}
     assert with_fast == without
+
+
+def test_route_cache_limit_does_not_change_results(orders400):
+    """Önbellek sınırı yalnızca belleği etkiler: rota kümeye bağlı (sıralı liste)."""
+    from algorithms.routing.route_cache import RouteCache
+    from core.experiment import make_algorithms
+    wh, orders = orders400[0], orders400[1][:60]
+    base = {n: a.solve(orders, wh).total_travel_distance for n, a in make_algorithms(7, 40).items()}
+    old = RouteCache.__init__.__defaults__
+    try:
+        RouteCache.__init__.__defaults__ = (50,)          # neredeyse her çağrıda boşalt
+        tiny = {n: a.solve(orders, wh).total_travel_distance for n, a in make_algorithms(7, 40).items()}
+    finally:
+        RouteCache.__init__.__defaults__ = old
+    assert tiny == base
+
+
+def test_route_depends_only_on_set(orders400):
+    from algorithms.routing.route_cache import RouteCache
+    wh, orders = orders400
+    wh.build_problem_matrix(orders)
+    locs = sorted({l.location for o in orders for l in o.orderlines})[:40]
+    a = RouteCache(wh).get(locs)
+    b = RouteCache(wh).get(list(reversed(locs)) + locs[:5])
+    assert a == b
