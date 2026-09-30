@@ -58,7 +58,8 @@ def _generated_rows(d: dict) -> list[dict]:
     rows = []
     for r in d['results']:
         row = {'group': r['name'], 'k': r['k'], 'n_maxol': None,
-               'size': r['spec']['size'], 'blocks': r['spec']['blocks']}
+               'size': r['spec']['size'], 'blocks': r['spec']['blocks'],
+               'fill': round(r['spec'].get('fill', 0) * 100) or None}
         for a in ALGS:
             row[a] = {'td': r[a]['td'], 'rt': r[a]['rt'],
                       'td_seeds': r[a].get('td_seeds', [r[a]['td']])}
@@ -104,6 +105,37 @@ def holm(pvals: list) -> list:
         running = max(running, min(1.0, (m - rank) * p))
         out[i] = running
     return out
+
+
+def summarize(inst: list[dict], meta: dict) -> dict:
+    """Web sitesi için makine okunur özet (site_data.py kullanır)."""
+    proto = meta.get('protocol') or {'depso_iter': meta.get('depso_iter'), 'n_seeds': 1,
+                                     'time_budget': None, 'time_per_order': None}
+    i_w = defaultdict(int)
+    for r in inst:
+        i_w[winners({a: r[a]['td'] for a in ALGS})] += 1
+    tests = [wilcoxon([r[a]['td'] for r in inst], [r[b]['td'] for r in inst]) for a, b in PAIRS]
+    adj = holm([t['p'] for t in tests])
+    pairs = []
+    for (a, b), t, p in zip(PAIRS, tests, adj):
+        pairs.append({'a': a, 'b': b, 'p': p, 'a_better': t['x_better'], 'b_better': t['y_better'],
+                      'diff_pct': round(statistics.fmean((r[a]['td'] - r[b]['td']) / r[b]['td'] * 100
+                                                         for r in inst), 3)})
+
+    def gaps(key):
+        out = {}
+        for v in sorted({r[key] for r in inst if r.get(key) is not None}):
+            sub = [r for r in inst if r[key] == v]
+            out[str(v)] = {a: round(statistics.fmean(
+                (r[a]['td'] - min(r[x]['td'] for x in ALGS)) / min(r[x]['td'] for x in ALGS) * 100
+                for r in sub), 3) for a in ALGS}
+        return out
+    return {'n': len(inst), 'groups': len({r['group'] for r in inst}),
+            'seeds': max(len(r[ALGS[0]]['td_seeds']) for r in inst),
+            'protocol': proto, 'git': meta.get('git'), 'jobs': meta.get('jobs'),
+            'wins': {c: i_w[c] for c in ALGS + ['berabere']}, 'pairs': pairs,
+            'gap_by': {k: g for k in ('k', 'n_maxol', 'size', 'blocks', 'fill') if len(g := gaps(k)) > 1},
+            'runtime': {a: round(statistics.fmean(r[a]['rt'] for r in inst), 2) for a in ALGS}}
 
 
 def report(inst: list[dict], meta: dict, source: Path) -> str:

@@ -111,6 +111,15 @@ th:first-child,td:first-child{text-align:left}
 th{font-weight:600;color:var(--muted)}
 td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
 details summary{cursor:pointer;font-size:14px;color:var(--muted);margin-top:10px}
+.viewbar label.inline{max-width:100%;min-width:0}
+.viewbar select{max-width:100%;min-width:0;text-overflow:ellipsis}
+.winbar{display:flex;height:34px;border-radius:6px;overflow:hidden;margin-top:6px;border:1px solid var(--line)}
+.winbar span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;min-width:0}
+.pairs{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:8px;max-width:80ch}
+.pairs li{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:15px;color:var(--ink-2)}
+.pairs .sig{display:inline-block;margin-left:6px;font-size:12px;padding:1px 7px;border-radius:10px;border:1px solid var(--line);color:var(--muted)}
+.pairs .sig.yes{color:var(--ink);border-color:var(--ink-2)}
+.small{font-size:13px;margin:14px 0 0}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 
 .note{border-left:3px solid var(--accent);padding:4px 0 4px 14px;color:var(--ink-2);font-size:15px;max-width:78ch}
