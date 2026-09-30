@@ -226,6 +226,7 @@ def report(inst: list[dict], meta: dict, source: Path) -> str:
     L += breakdown('n_maxol', "Sipariş başına en fazla satır")
     L += breakdown('size', "Depo boyutu")
     L += breakdown('blocks', "Blok sayısı")
+    L += breakdown('fill', "Doluluk (%)")
 
     # Tohum değişkenliği
     if n_seeds > 1:
