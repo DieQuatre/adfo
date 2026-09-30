@@ -120,10 +120,10 @@ def test_zero_is_a_valid_override():
 
 
 def test_run_batch_does_not_override_rbrs_settings():
-    src = (Path(__file__).parent.parent / "run_batch.py").read_text(encoding="utf-8")
+    src = (Path(__file__).parent.parent / "core" / "experiment.py").read_text(encoding="utf-8")
     call = src[src.index("RBRS_AE("):src.index(")", src.index("RBRS_AE("))]
     for key in ("max_iterations", "max_no_improvement", "shift_attempts", "swap_attempts"):
-        assert key not in call, f"run_batch.py RBRS-AE ayarını ({key}) eziyor"
+        assert key not in call, f"core/experiment.py RBRS-AE ayarını ({key}) eziyor"
 
 
 # ── ALNS ─────────────────────────────────────────────────────────────

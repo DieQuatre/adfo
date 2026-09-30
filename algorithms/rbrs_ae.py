@@ -44,6 +44,8 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         self.convergence_history: list[float] = []
         self._routes: RouteCache | None = None   # ortak rota servisi
 
+    FINAL_SHARE_SPLIT = 0.7    # süre bütçesinde ana döngünün payı
+
     @property
     def name(self) -> str:
         return "RBRS-AE"
@@ -79,8 +81,14 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         # 3) Iterative improvement
         no_imp = 0
         it = 0
-        for it in range(1, self.max_iterations + 1):
-            if no_imp >= self.max_no_improvement:
+        budget = self.time_limit is not None
+        for it in range(1, self._iter_limit(self.max_iterations) + 1):
+            if budget:
+                # bütçenin %70'i ana döngüye, kalanı son yerel iyileştirmeye
+                if it > 1 and self._time_up(self.FINAL_SHARE_SPLIT):
+                    it -= 1
+                    break
+            elif no_imp >= self.max_no_improvement:
                 break
 
             # Shift
@@ -92,7 +100,7 @@ class RBRS_AE(BatchingRoutingAlgorithm):
                 self._compute_routes(batches)
 
             # Adaptive elimination (%20 → %10)
-            elim_pct = 0.20 - 0.10 * (it / self.max_iterations)
+            elim_pct = 0.20 - 0.10 * self._progress(it, self.max_iterations)
             batches = self._eliminate(batches, orders, priorities, elim_pct)
             self._compute_routes(batches)
 
@@ -116,6 +124,8 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         # Exploration değil exploitation — sadece iyileşme kabul edilir
         final_batches = self._clone(best_batches)
         for _ in range(15):
+            if self._time_up():
+                break
             final_batches, c1 = self._final_shift(final_batches)
             final_batches, c2 = self._final_swap(final_batches)
             if not c1 and not c2:
@@ -499,6 +509,8 @@ class RBRS_AE(BatchingRoutingAlgorithm):
         best_move = None
 
         for i in range(len(batches)):
+            if self._time_up():            # süre bütçesi: o ana kadarki en iyi takas
+                break
             for j in range(i + 1, len(batches)):
                 b1, b2 = batches[i], batches[j]
                 for o1 in b1.orders:

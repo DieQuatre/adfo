@@ -9,7 +9,8 @@ Parametrik üreticinin depolarında algoritma karşılaştırması
     python run_generated.py --summary                      # kayıtlı sonuç özeti
 
 Her depo × sipariş seti için SOP, FCFS, DEPSO, RBRS-AE, ALNS aynı siparişlerle
-koşar. Sonuçlar örnek bittikçe results/generated/checkpoints/ altına yazılır;
+koşar. --seeds ve --time-budget run_batch.py ile aynı (docs/DENEY_PROTOKOLU.md);
+commit'lenmemiş değişiklik varken koşum başlamaz (--allow-dirty). Sonuçlar örnek bittikçe results/generated/checkpoints/ altına yazılır;
 kesilen koşum aynı komutla devam eder. Özet: results/generated/summary.md.
 """
 
@@ -26,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 from config import GENERATOR as GEN
 from core.generator import InstanceSpec, generate
-from run_batch import ALGORITHMS, solve_all, _git_commit
+from core import experiment as ex
+from core.experiment import ALGORITHMS, Protocol
 
 OUT = Path("results") / "generated"
 CKPT = OUT / "checkpoints"
@@ -40,24 +42,25 @@ def _instance(spec: InstanceSpec):
     return _CACHE[spec]
 
 
-def _ckpt(spec: InstanceSpec, set_id: int, k: int, depso_iter: int) -> Path:
-    return CKPT / f"{spec.name}__k{k}__set{set_id}__d{depso_iter}.json"
+def _ckpt(spec: InstanceSpec, set_id: int, k: int, proto: Protocol) -> Path:
+    return CKPT / f"{spec.name}__k{k}__set{set_id}__d{proto.depso_iter}{proto.tag}.json"
 
 
 def _run(task):
-    spec, set_id, k, depso_iter = task
+    spec, set_id, k, proto = task
     inst = _instance(spec)
     orders = inst.sample_orders(k, set_id)
     seed = 1000 * set_id + k
     res = {'name': spec.name, 'spec': spec.__dict__, 'set_id': set_id, 'k': k, 'seed': seed,
            'total_locations': inst.warehouse.total_locations}
-    res.update(solve_all(orders, inst.warehouse, seed, depso_iter))
+    res.update(ex.solve_all(orders, inst.warehouse, seed, proto))
     return res
 
 
-def summarise(rows: list[dict]) -> str:
+def summarise(rows: list[dict], proto: Protocol | None = None) -> str:
     lines = ["# Parametrik ızgara — algoritma karşılaştırması", "",
-             f"Kod sürümü: `{_git_commit()}`, {len(rows)} örnek.", ""]
+             f"Kod sürümü: `{ex.git_state()['commit']}`, {len(rows)} örnek"
+             + (f", protokol {proto.to_dict()}" if proto else "") + ".", ""]
     algs = [a for a in ('DEPSO', 'RBRS-AE', 'ALNS')]
 
     def table(key_fn, title):
@@ -89,8 +92,11 @@ def summarise(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def load_all() -> list[dict]:
-    return [json.loads(p.read_text(encoding='utf-8')) for p in sorted(CKPT.glob("*.json"))]
+def load_all(proto: Protocol) -> list[dict]:
+    """Yalnızca bu protokolle alınmış checkpoint'ler (protokoller karışmaz)."""
+    suffix = f"__d{proto.depso_iter}{proto.tag}.json"
+    return [json.loads(p.read_text(encoding='utf-8')) for p in sorted(CKPT.glob("*.json"))
+            if p.name.endswith(suffix)]
 
 
 def main():
@@ -105,12 +111,19 @@ def main():
     ap.add_argument('--depso-iter', type=int, default=config.DEPSO['num_iterations'])
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--summary', action='store_true')
+    ap.add_argument('--seeds', type=int, default=1)
+    ap.add_argument('--time-budget', type=float, default=None)
+    ap.add_argument('--time-per-order', type=float, default=None)
+    ap.add_argument('--allow-dirty', action='store_true')
     args = ap.parse_args()
+    proto = Protocol(depso_iter=args.depso_iter, n_seeds=args.seeds, time_budget=args.time_budget,
+                     time_per_order=args.time_per_order)
+    tag = proto.tag
 
     OUT.mkdir(parents=True, exist_ok=True)
     CKPT.mkdir(parents=True, exist_ok=True)
     if args.summary:
-        rows = load_all()
+        rows = load_all(proto)
         print(summarise(rows) if rows else "Henüz sonuç yok.")
         return
 
@@ -119,7 +132,8 @@ def main():
     specs = [InstanceSpec(size, b, f, args.dynamics, args.seed)
              for size in args.sizes for b in args.blocks for f in args.fills]
     # Aynı depoyu kullanan işler art arda gelsin (işçi önbelleği için)
-    tasks = [(s, i, k, args.depso_iter) for s in specs for k in args.k for i in range(args.sets)]
+    git = ex.require_clean(args.allow_dirty)
+    tasks = [(s, i, k, proto) for s in specs for k in args.k for i in range(args.sets)]
     todo = [t for t in tasks if not _ckpt(*t).exists()]
     print(f"{len(specs)} depo × {args.sets} set × k={args.k} → {len(tasks)} örnek "
           f"({len(tasks) - len(todo)} zaten bitmiş), {args.jobs} paralel işlem")
@@ -131,7 +145,7 @@ def main():
         nonlocal done
         done += 1
         spec = InstanceSpec(**r['spec'])
-        _ckpt(spec, r['set_id'], r['k'], args.depso_iter).write_text(json.dumps(r), encoding='utf-8')
+        _ckpt(spec, r['set_id'], r['k'], proto).write_text(json.dumps(r), encoding='utf-8')
         parts = ' '.join(f"{a}={r[a]['td']:.0f}" for a in ALGORITHMS)
         print(f"  [{done}/{len(tasks)} {time.perf_counter() - t0:6.0f}s] {r['name']} k={r['k']} "
               f"set{r['set_id']}: {parts}", flush=True)
@@ -144,14 +158,17 @@ def main():
         for t in todo:
             report(_run(t))
 
-    rows = load_all()
-    (OUT / "summary.md").write_text(summarise(rows), encoding='utf-8')
-    (OUT / "results.json").write_text(json.dumps({
-        'git_commit': _git_commit(), 'depso_iter': args.depso_iter,
+    rows = load_all(proto)
+    (OUT / f"summary{tag}.md").write_text(summarise(rows, proto), encoding='utf-8')
+    (OUT / f"results{tag}.json").write_text(json.dumps({
+        'git_commit': git['commit'], 'git': git, 'depso_iter': args.depso_iter,
+        'protocol': proto.to_dict(), 'jobs': args.jobs,
         'config': {'DEPSO': config.DEPSO, 'RBRS_AE': config.RBRS_AE, 'ALNS': config.ALNS,
                    'GENERATOR': GEN},
         'results': rows}, indent=1), encoding='utf-8')
-    print(f"\n✓ {len(rows)} örnek. Özet: {OUT / 'summary.md'}")
+    print(f"\n✓ {len(rows)} örnek. Özet: {OUT / f'summary{tag}.md'}")
+    if tag:
+        print(f"Karşılaştırma raporu: python compare_algorithms.py {OUT / f'results{tag}.json'}")
 
 
 if __name__ == '__main__':

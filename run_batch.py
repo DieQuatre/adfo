@@ -17,6 +17,16 @@ yalnızca DEPSO iterasyonu komut satırından değiştirilebilir (varsayılan: m
 
 Sonuç dosyası results/batch_<i>.json: ortalamalar + örnek bazında ham değerler
 (istatistiksel testler ve web sitesi için) + kullanılan ayarlar ve kod sürümü.
+
+Algoritma karşılaştırması için (docs/DENEY_PROTOKOLU.md):
+    python run_batch.py --batch all --jobs 16 --seeds 5 --time-budget 60
+    python compare_algorithms.py results/compare__s5__t60
+--seeds N: her örnek her metasezgiselle N farklı tohumla çözülür.
+--time-budget S: DEPSO, RBRS-AE ve ALNS örnek başına aynı süreyi (S sn) kullanır.
+--time-per-order s: aynı, ama süre sipariş sayısıyla orantılı (k × s sn).
+Varsayılan olmayan protokolün sonuçları results/compare<ek>/ klasörüne yazılır;
+Kübler referans doğrulaması (results/batch_*.json) değişmez.
+Commit'lenmemiş değişiklik varken koşum başlamaz (--allow-dirty ile yalnızca deneme).
 """
 
 import sys
@@ -24,7 +34,6 @@ import json
 import time
 import random
 import argparse
-import subprocess
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -32,14 +41,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.warehouse import Warehouse
 from core.data_loader import DataLoader
-from benchmarks.sop import SOP
-from benchmarks.fcfs import FCFS
-from algorithms.depso import DEPSO
-from algorithms.rbrs_ae import RBRS_AE
-from algorithms.alns import ALNS
+from core import experiment as ex
+from core.experiment import ALGORITHMS, Protocol
 import config
-
-ALGORITHMS = ['SOP', 'FCFS', 'DEPSO', 'RBRS-AE', 'ALNS']
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -157,7 +161,7 @@ def _run_instance(task: tuple) -> dict:
     global _WH
     if _WH is None:
         _WH = Warehouse()
-    name, k, n, a, inst_id, depso_iter = task
+    name, k, n, a, inst_id, proto = task
     seed = _instance_seed(inst_id, k)
     pool = load_pool(n, a)
     if len(pool) < k:
@@ -167,30 +171,18 @@ def _run_instance(task: tuple) -> dict:
     orders = shuffled[:k]
 
     out = {'scenario': name, 'inst_id': inst_id, 'seed': seed}
-    out.update(solve_all(orders, _WH, seed, depso_iter))
+    out.update(ex.solve_all(orders, _WH, seed, proto))
     return out
 
 
 def make_algorithms(seed: int, depso_iter: int) -> dict:
     """Karşılaştırılan algoritmalar; ayarlar config.py'den (DEPSO iterasyonu hariç)."""
-    return {
-        'SOP':     SOP(),
-        'FCFS':    FCFS(),
-        'DEPSO':   DEPSO(num_iterations=depso_iter, seed=seed),
-        'RBRS-AE': RBRS_AE(seed=seed),
-        'ALNS':    ALNS(seed=seed),
-    }
+    return ex.make_algorithms(seed, depso_iter)
 
 
 def solve_all(orders, warehouse, seed: int, depso_iter: int) -> dict:
-    algos = make_algorithms(seed, depso_iter)
-    out = {}
-    for alg in ALGORITHMS:
-        sol = algos[alg].solve(orders, warehouse)
-        out[alg] = {'td': sol.total_travel_distance,
-                    'rt': sol.runtime_seconds,
-                    'batches': sol.num_batches}
-    return out
+    """Tek tohum, iterasyon sınırlı (eski arayüz)."""
+    return ex.solve_all(orders, warehouse, seed, Protocol(depso_iter=depso_iter))
 
 
 def _aggregate(scenario: dict, inst_results: list[dict]) -> dict:
@@ -214,6 +206,9 @@ def _aggregate(scenario: dict, inst_results: list[dict]) -> dict:
             'rt':           [round(t, 3) for t in rts],
             'batches':      [r[alg]['batches'] for r in inst_results],
         }
+        if 'td_seeds' in inst_results[0].get(alg, {}):
+            stats[alg]['td_seeds'] = [r[alg]['td_seeds'] for r in inst_results]
+            stats[alg]['rt_seeds'] = [r[alg]['rt_seeds'] for r in inst_results]
     return {'scenario': name, 'k': k, 'n_maxol': n, 'a_maxol': a,
             'paper_vs_sop': paper, 'n_instances': len(inst_results),
             'seeds': [r['seed'] for r in inst_results],
@@ -224,19 +219,19 @@ CHECKPOINT_DIR = Path("results") / "checkpoints"
 
 
 def _ckpt_path(task: tuple) -> Path:
-    name, k, n, a, inst_id, depso_iter = task
-    return CHECKPOINT_DIR / f"{name}__i{inst_id}__d{depso_iter}.json"
+    name, k, n, a, inst_id, proto = task
+    return CHECKPOINT_DIR / f"{name}__i{inst_id}__d{proto.depso_iter}{proto.tag}.json"
 
 
-def run_scenarios(scenarios: list[dict], n_instances: int, depso_iter: int,
+def run_scenarios(scenarios: list[dict], n_instances: int, proto: Protocol,
                   jobs: int = 1, resume: bool = True) -> list[dict]:
     """
     Her (senaryo, örnek) bittiği anda results/checkpoints/ altına yazılır.
     Koşum yarıda kesilirse aynı komut tekrar çalıştırıldığında bitmiş
-    örnekler atlanır (resume=True). Checkpoint, DEPSO iterasyonunu da
-    anahtarında taşır; farklı ayarla alınmış sonuç karışmaz.
+    örnekler atlanır (resume=True). Checkpoint, protokolü (DEPSO iterasyonu,
+    tohum sayısı, süre bütçesi) adında taşır; farklı ayarla alınmış sonuç karışmaz.
     """
-    tasks = [(s['name'], s['k'], s['n'], s['a'], i, depso_iter)
+    tasks = [(s['name'], s['k'], s['n'], s['a'], i, proto)
              for s in scenarios for i in range(n_instances)]
     done: dict[str, list] = {s['name']: [] for s in scenarios}
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
@@ -254,7 +249,7 @@ def run_scenarios(scenarios: list[dict], n_instances: int, depso_iter: int,
     t0 = time.perf_counter()
 
     def _report(r):
-        task = (r['scenario'], None, None, None, r['inst_id'], depso_iter)
+        task = (r['scenario'], None, None, None, r['inst_id'], proto)
         _ckpt_path(task).write_text(json.dumps(r), encoding='utf-8')
         done[r['scenario']].append(r)
         parts = ' '.join(f"{alg}={r[alg]['td']:.0f}" for alg in ALGORITHMS)
@@ -274,11 +269,7 @@ def run_scenarios(scenarios: list[dict], n_instances: int, depso_iter: int,
 
 
 def _git_commit() -> str:
-    try:
-        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
-                                       text=True, stderr=subprocess.DEVNULL).strip()
-    except Exception:
-        return 'bilinmiyor'
+    return ex.git_state()['commit']
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -309,10 +300,9 @@ def print_summary(results: list):
     print("="*72)
 
 
-def load_all_results() -> list:
+def load_all_results(results_dir: Path = Path("results")) -> list:
     """Tüm batch sonuçlarını birleştir."""
     all_results = []
-    results_dir = Path("results")
     for i in range(1, 8):
         path = results_dir / f"batch_{i}.json"
         if path.exists():
@@ -344,7 +334,18 @@ if __name__ == "__main__":
                         help="Checkpoint'leri yok say, her örneği baştan koş")
     parser.add_argument("--summary", action="store_true",
                         help="Tüm batch sonuçlarını özetler")
+    parser.add_argument("--seeds", type=int, default=1,
+                        help="Örnek başına metasezgisel tohum sayısı (varsayılan 1)")
+    parser.add_argument("--time-budget", type=float, default=None,
+                        help="DEPSO, RBRS-AE, ALNS için örnek başına eşit süre (sn)")
+    parser.add_argument("--time-per-order", type=float, default=None,
+                        help="Eşit süre bütçesi sipariş sayısıyla orantılı: k × bu değer (sn)")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Commit'lenmemiş değişikliklerle koşmaya izin ver (yalnızca deneme)")
     args = parser.parse_args()
+    proto = Protocol(depso_iter=args.depso_iter, n_seeds=args.seeds,
+                     time_budget=args.time_budget, time_per_order=args.time_per_order)
+    out_dir = Path("results") if proto.is_default else Path("results") / f"compare{proto.tag}"
 
     if args.only:
         wanted = [x.strip() for x in args.only.split(',') if x.strip()]
@@ -353,18 +354,20 @@ if __name__ == "__main__":
         if missing:
             print(f"Bilinmeyen senaryo: {missing}")
             sys.exit(1)
-        res = run_scenarios([by[w] for w in wanted], args.n, args.depso_iter, args.jobs,
+        git = ex.require_clean(args.allow_dirty)
+        res = run_scenarios([by[w] for w in wanted], args.n, proto, args.jobs,
                             resume=not args.fresh)
-        Path("results").mkdir(exist_ok=True)
-        with open(Path("results") / "only.json", 'w', encoding='utf-8') as f:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with open(out_dir / "only.json", 'w', encoding='utf-8') as f:
             json.dump({'n_instances': args.n, 'depso_iter': args.depso_iter,
-                       'algorithms': ALGORITHMS, 'git_commit': _git_commit(),
+                       'protocol': proto.to_dict(), 'jobs': args.jobs,
+                       'algorithms': ALGORITHMS, 'git_commit': git['commit'], 'git': git,
                        'results': res}, f, indent=2)
         print_summary(res)
         sys.exit(0)
 
     if args.summary or args.batch is None:
-        all_res = load_all_results()
+        all_res = load_all_results(out_dir)
         if all_res:
             print_summary(all_res)
         else:
@@ -384,26 +387,29 @@ if __name__ == "__main__":
         sys.exit(1)
 
     scenarios = [s for i in batch_ids for s in BATCHES[i - 1]]
+    git = ex.require_clean(args.allow_dirty)
     print("=" * 60)
     print(f"BATCH {args.batch}: {len(scenarios)} senaryo × {args.n} örnek, "
-          f"DEPSO {args.depso_iter} iter, {args.jobs} paralel işlem")
+          f"{proto.describe()}, {args.jobs} paralel işlem, kod {git['commit']}")
+    print(f"Çıktı: {out_dir}/")
     print("=" * 60)
 
     t0 = time.perf_counter()
-    results = run_scenarios(scenarios, args.n, args.depso_iter, args.jobs,
+    results = run_scenarios(scenarios, args.n, proto, args.jobs,
                             resume=not args.fresh)
     by_name = {r['scenario']: r for r in results}
 
     meta = {
         'n_instances': args.n, 'depso_iter': args.depso_iter,
-        'algorithms': ALGORITHMS, 'git_commit': _git_commit(),
+        'protocol': proto.to_dict(), 'jobs': args.jobs,
+        'algorithms': ALGORITHMS, 'git_commit': git['commit'], 'git': git,
         'config': {'DEPSO': config.DEPSO, 'RBRS_AE': config.RBRS_AE,
                    'ALNS': config.ALNS},
     }
-    Path("results").mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     for i in batch_ids:
         names = [s['name'] for s in BATCHES[i - 1]]
-        out = Path("results") / f"batch_{i}.json"
+        out = out_dir / f"batch_{i}.json"
         with open(out, 'w', encoding='utf-8') as f:
             json.dump({'batch': i, 'scenarios': names, **meta,
                        'results': [by_name[n] for n in names]}, f, indent=2)
@@ -412,5 +418,7 @@ if __name__ == "__main__":
     print(f"\n✓ Tamamlandı ({time.perf_counter() - t0:.0f}s)")
     print_summary(results)
 
-    all_res = load_all_results()
+    all_res = load_all_results(out_dir)
     print(f"\nToplam kayıtlı senaryo: {len(all_res)}/35")
+    if not proto.is_default:
+        print(f"Karşılaştırma raporu: python compare_algorithms.py {out_dir}")
