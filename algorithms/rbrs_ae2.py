@@ -174,7 +174,9 @@ class RBRS_AE2(RBRS_AE):
     def _destroy_repair(self, batches, orders, priorities, elim_pct):
         if self.opts['destroy'] == 'worst' and self.opts['repair'] == 'greedy':
             return self._eliminate(batches, orders, priorities, elim_pct)
-        if len(batches) <= 2:
+        # Özgün eleme 2 ve daha az grupta hiç çalışmıyor; küçük örneklerde
+        # (ör. 50 sipariş ≈ 2 grup) arama yalnızca shift/swap'a kalıyordu.
+        if len(batches) < 2:
             return batches
         n_orders = sum(len(b.orders) for b in batches)
         q = max(2, int(round(elim_pct * n_orders)))

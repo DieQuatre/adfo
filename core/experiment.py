@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 BASELINES = ['SOP', 'FCFS']
-METAHEURISTICS = ['DEPSO', 'RBRS-AE', 'ALNS']
+METAHEURISTICS = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS']
 ALGORITHMS = BASELINES + METAHEURISTICS
 
 # Kod durumu kontrolünde sayılmayan yollar: koşumların kendi çıktıları
@@ -126,6 +126,7 @@ def make_algorithms(seed: int, depso_iter: int, time_budget: float | None = None
     from algorithms.alns import ALNS
     from algorithms.depso import DEPSO
     from algorithms.rbrs_ae import RBRS_AE
+    from algorithms.rbrs_ae2 import RBRS_AE2
     from benchmarks.fcfs import FCFS
     from benchmarks.sop import SOP
     algos = {
@@ -133,6 +134,7 @@ def make_algorithms(seed: int, depso_iter: int, time_budget: float | None = None
         'FCFS':    FCFS(),
         'DEPSO':   DEPSO(num_iterations=depso_iter, seed=seed),
         'RBRS-AE': RBRS_AE(seed=seed),
+        'RBRS-AE2': RBRS_AE2.recommended(seed=seed),
         'ALNS':    ALNS(seed=seed),
     }
     if time_budget is not None:

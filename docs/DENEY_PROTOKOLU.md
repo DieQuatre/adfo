@@ -102,3 +102,23 @@ algoritmaları sonuçları değiştirmeden ~10–20 kat hızlandırdı. Sipariş
 Süre tahminleri (16 paralel işlem): (1) ~3 saat; (3) ~3–4 saat; (4) ~4–5 saat.
 (4)'te taşıma kararı first-fit ölçümüyle verildiği için üç algoritma aynı
 taşımaları yapar; fark yalnızca toplama planından gelir (docs/RELOCATION.md).
+
+## RBRS-AE2 ile tekrar (Paket 15)
+
+Dört algoritma (DEPSO, RBRS-AE, RBRS-AE2, ALNS), tek kod sürümü, eşit süre:
+
+```bash
+# 1. gece (~5 saat)
+python run_batch.py --batch all --jobs 16 --seeds 5 --time-per-order 0.05
+python run_generated.py --jobs 16 --seeds 5 --time-per-order 0.05 --fresh
+
+# 2. gece (~3-4 saat): yalnızca eksik RBRS-AE2 koşulur
+for s in 5000 10000 15000 20000; do for a in DEPSO RBRS-AE RBRS-AE2 ALNS; do
+  python run_dynamic.py --source generated --size $s --blocks 2 --fill 0.7 \
+      --dynamics yuksek --algo $a --jobs 16 --skip-existing
+done; done
+```
+
+Kübler 35 senaryosu sipariş başına 0,05 sn ile yeniden koşuluyor: önceki
+koşum (0,5 sn) rota hızlandırmasından önceydi; aynı arama miktarı için yeni
+kodda 0,05 sn yeter. Sonuç: results/compare__s5__tpo0.05.

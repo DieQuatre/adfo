@@ -29,13 +29,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.experiment import METAHEURISTICS as ALGS, fmt_p, wilcoxon
+from core.experiment import METAHEURISTICS, fmt_p, wilcoxon
 
 def tr(x: float, spec: str = ".2f") -> str:
     return format(x, spec).replace('.', ',')
 
 
-PAIRS = [('ALNS', 'DEPSO'), ('ALNS', 'RBRS-AE'), ('RBRS-AE', 'DEPSO')]
+ALL_PAIRS = [('ALNS', 'DEPSO'), ('ALNS', 'RBRS-AE'), ('RBRS-AE', 'DEPSO'),
+             ('RBRS-AE2', 'RBRS-AE'), ('ALNS', 'RBRS-AE2'), ('RBRS-AE2', 'DEPSO')]
+# Sonuç dosyasında hangi algoritmalar varsa onlar (load() ayarlar); eski
+# üç algoritmalı koşumlar da okunur.
+ALGS = [a for a in METAHEURISTICS if a != 'RBRS-AE2']
+PAIRS = [p for p in ALL_PAIRS if all(x in ALGS for x in p)]
+
+
+def _set_algorithms(present) -> None:
+    global ALGS, PAIRS
+    ALGS = [a for a in METAHEURISTICS if a in present]
+    PAIRS = [p for p in ALL_PAIRS if all(x in ALGS for x in p)]
 
 
 # ── Okuma ──────────────────────────────────────────────────────────────
@@ -79,6 +90,8 @@ def load(source: Path) -> tuple[list[dict], dict]:
     if not files:
         sys.exit(f"{source} içinde batch_*.json yok")
     meta, inst = {}, []
+    first = json.loads(files[0].read_text(encoding='utf-8'))['results'][0]
+    _set_algorithms(first['stats'] if 'stats' in first else first)
     for f in files:
         d = json.loads(f.read_text(encoding='utf-8'))
         meta = meta or {k: v for k, v in d.items() if k != 'results'}

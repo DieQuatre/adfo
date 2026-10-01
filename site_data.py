@@ -36,7 +36,7 @@ from core.generator import InstanceSpec, generate
 
 ROOT = Path(__file__).parent
 SITE_DATA = ROOT / "site" / "data"
-ALGOS = ['DEPSO', 'RBRS-AE', 'ALNS']
+ALGOS = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS']
 BASELINES = ['SOP', 'FCFS']
 
 DIMENSIONS = [
@@ -262,7 +262,8 @@ def main():
     catalog = {
         'generated_at': time.strftime('%Y-%m-%d %H:%M'),
         'git_commit': _git_commit(),
-        'algorithms': ALGOS, 'baselines': BASELINES, 'dimensions': DIMENSIONS,
+        'algorithms': [a for a in ALGOS if not records or any(a in r['res'] for r in records)],
+        'baselines': BASELINES, 'dimensions': DIMENSIONS,
         'records': records,
         'records_protocol': tag,
         'comparisons': comparison_records(),

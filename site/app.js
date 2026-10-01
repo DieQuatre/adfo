@@ -2,7 +2,7 @@
 'use strict';
 const C = window.CATALOG || {records: [], reference: [], dynamic: [], races: [], dimensions: [], algorithms: [], comparisons: []};
 const ALGOS = C.algorithms && C.algorithms.length ? C.algorithms : ['DEPSO', 'RBRS-AE', 'ALNS'];
-const SERIES = {'DEPSO': '--s1', 'RBRS-AE': '--s2', 'ALNS': '--s3'};
+const SERIES = {'DEPSO': '--s1', 'RBRS-AE': '--s2', 'ALNS': '--s3', 'RBRS-AE2': '--s4'};
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const nf = (v, d = 0) => Number(v).toLocaleString('tr-TR', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -436,7 +436,7 @@ function initDynamic() {
 
 // Kendi depolarımızda üç algoritmanın taşımalı mesafesi (aynı taşıma kararları)
 function initDynamicCompare() {
-  const algs = ['DEPSO', 'RBRS-AE', 'ALNS'];
+  const algs = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS'].filter(a => a !== 'RBRS-AE2' || C.dynamic.some(d => d.algorithm === a));
   const by = {};
   C.dynamic.forEach(d => {
     const m = d.problem.match(/^S(\d+)_B(\d)_F(\d+)_(\w+?)_s(\d+)$/);
@@ -515,7 +515,7 @@ function initComparison() {
   const render = () => {
     const c = list[+sel.value || 0];
     // en iyi algoritma payları
-    const algs = ['DEPSO', 'RBRS-AE', 'ALNS'], tot = c.n || 1;
+    const algs = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS'].filter(a => a in c.wins), tot = c.n || 1;
     document.getElementById('cmpWinsLabel').innerHTML = `${nf(c.n)} örneğin kaçında en kısa yolu hangi algoritma buldu: ` +
       algs.map(a => `<span class="dot" style="--c:var(${SERIES[a]})"></span>${esc(a)} ${nf(c.wins[a] || 0)}`).join(' &nbsp; ');
     document.getElementById('cmpWins').innerHTML = algs.map(a => {
