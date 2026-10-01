@@ -142,14 +142,19 @@ def dynamic_records() -> list[dict]:
     """
     Dinamik deneyler. Grupları sabit tutan eski ölçüm (_tdralgo) sitede
     gösterilmez: DEPSO gibi konuma göre gruplayan algoritmalarda kazancı
-    olduğundan çok küçük ölçer (docs/RELOCATION.md). Sıra: makaledeki ölçümle
-    yapılan Kübler koşumları, diğer Kübler koşumları, kendi depolarımız.
+    olduğundan çok küçük ölçer (docs/RELOCATION.md). Sıra: kendi depolarımız
+    (boyuta göre), sonra Kübler koşumları (makaledeki ölçümle yapılanlar önce).
     """
     out = []
 
     def order(p):
         n = p.stem
-        return (not n.endswith('_tdrfull'), not n.startswith('kubler_fig10'), n.lower())
+        import re
+        m = re.match(r'S(\d+)_B(\d)_F(\d+)_(\w+?)_s(\d+)_(.+)$', n)
+        if m:                                   # önce kendi depolarımız: boyut, algoritma sırası
+            alg = {'DEPSO': 0, 'RBRS-AE': 1, 'ALNS': 2}.get(m.group(6), 3)
+            return (0, int(m.group(1)), int(m.group(2)), int(m.group(3)), alg, n)
+        return (1, not n.endswith('_tdrfull'), not n.startswith('kubler_fig10'), 0, 0, n.lower())
 
     for p in sorted((ROOT / "results" / "dynamic").glob("*.json"), key=order):
         if p.stem.endswith('_tdralgo'):
@@ -158,6 +163,8 @@ def dynamic_records() -> list[dict]:
         if 'periods' not in d:
             continue
         summary = dict(d['summary'])
+        summary['td_static'] = round(sum(r['td_static'] for r in d['periods']), 1)
+        summary['td_dynamic'] = round(sum(r['td_dynamic'] for r in d['periods']), 1)
         summary.setdefault('tdr_eval', d.get('tdr_eval') or
                            ('full' if p.stem.endswith('_tdrfull') else 'firstfit'))
         out.append({'problem': d['problem'], 'algorithm': d['algorithm'],

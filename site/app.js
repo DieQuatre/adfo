@@ -426,10 +426,59 @@ function initDynamic() {
     const s = d.summary;
     document.getElementById('dynHeadline').textContent =
       `Toplamda yürüme mesafesi %${nf(s.reduction_pct, 2)} azaldı, taşımaya %${nf(s.effort_pct, 2)} emek harcandı; net etki %${nf(s.net_pct, 2)}. ` +
+      (s.td_static ? `9 dönemde taşımasız ${nf(s.td_static)} LU, taşımalı ${nf(s.td_dynamic)} LU yürüme. ` : '') +
       (d.paper ? `Makalede (DEPSO): azalma %${nf(d.paper.reduction_pct, 2)}, emek %${nf(d.paper.effort_pct, 2)}, net %${nf(d.paper.net_pct, 2)}. ` : '') +
       `Taşımalar dönem sonunda yapıldığı için kazanç bir sonraki dönemden itibaren görünür.`;
   };
   sel.addEventListener('change', render); render(); onTheme(render);
+  initDynamicCompare();
+}
+
+// Kendi depolarımızda üç algoritmanın taşımalı mesafesi (aynı taşıma kararları)
+function initDynamicCompare() {
+  const algs = ['DEPSO', 'RBRS-AE', 'ALNS'];
+  const by = {};
+  C.dynamic.forEach(d => {
+    const m = d.problem.match(/^S(\d+)_B(\d)_F(\d+)_(\w+?)_s(\d+)$/);
+    if (!m || !algs.includes(d.algorithm) || !d.summary.td_dynamic) return;
+    (by[d.problem] = by[d.problem] || {m, res: {}}).res[d.algorithm] = d.summary;
+  });
+  const rows = Object.values(by).filter(g => algs.every(a => g.res[a])).sort((a, b) => (+a.m[1]) - (+b.m[1]));
+  if (!rows.length) return;
+  document.getElementById('dynCmp').hidden = false;
+  const label = g => `${nf(+g.m[1])} lok.`;
+  const render = () => {
+    const groups = rows.map(g => {
+      const best = Math.min(...algs.map(a => g.res[a].td_dynamic));
+      const values = {};
+      algs.forEach(a => { values[a] = 100 * (g.res[a].td_dynamic - best) / best; });
+      return {label: label(g), values};
+    });
+    groupedBars(document.getElementById('dynCmpBox'), groups, algs.map(a => ({key: a, label: a, color: `var(${SERIES[a]})`})),
+                {fmt: v => '%' + nf(v, 1), yLabel: 'Taşımalı toplam mesafe, en kısasına göre fark (%) · düşük daha iyi', aria: 'Taşımalı mesafe karşılaştırması'});
+  };
+  let html = '<table class="dyntable"><thead><tr><th>Depo</th>' +
+    algs.map(a => `<th>${esc(a)}<br>net kazanç</th>`).join('') +
+    algs.map(a => `<th>${esc(a)}<br>taşımalı mesafe (LU)</th>`).join('') + '</tr></thead><tbody>';
+  rows.forEach(g => {
+    const bestNet = Math.max(...algs.map(a => g.res[a].net_pct)), bestTd = Math.min(...algs.map(a => g.res[a].td_dynamic));
+    html += `<tr><td>${label(g)}</td>` +
+      algs.map(a => `<td class="${g.res[a].net_pct === bestNet ? 'best' : ''}">%${nf(g.res[a].net_pct, 1)}</td>`).join('') +
+      algs.map(a => `<td class="${g.res[a].td_dynamic === bestTd ? 'best' : ''}">${nf(g.res[a].td_dynamic)}</td>`).join('') + '</tr>';
+  });
+  document.getElementById('dynCmpTable').innerHTML = html + '</tbody></table>';
+  const tdWin = {}, netWin = {};
+  rows.forEach(g => {
+    const t = algs.reduce((x, y) => g.res[x].td_dynamic <= g.res[y].td_dynamic ? x : y);
+    const n = algs.reduce((x, y) => g.res[x].net_pct >= g.res[y].net_pct ? x : y);
+    tdWin[t] = (tdWin[t] || 0) + 1; netWin[n] = (netWin[n] || 0) + 1;
+  });
+  const top = o => Object.entries(o).sort((a, b) => b[1] - a[1])[0];
+  const [tA, tN] = top(tdWin), [nA, nN] = top(netWin);
+  document.getElementById('dynCmpHeadline').textContent =
+    `${rows.length} deponun ${tN} tanesinde taşımadan sonraki en kısa mesafeyi ${tA} buldu; en büyük yüzde kazanç ise ${nN} depoda ${nA} algoritmasında. ` +
+    `Yer değişimi her algoritmanın planını iyileştiriyor, ama iyi bir toplama planının yerini tutmuyor.`;
+  render(); onTheme(render);
 }
 
 // ════════════════════════════════════════════════════════════════════
