@@ -61,7 +61,7 @@ def summarise(rows: list[dict], proto: Protocol | None = None) -> str:
     lines = ["# Parametrik ızgara — algoritma karşılaştırması", "",
              f"Kod sürümü: `{ex.git_state()['commit']}`, {len(rows)} örnek"
              + (f", protokol {proto.to_dict()}" if proto else "") + ".", ""]
-    algs = [a for a in ('DEPSO', 'RBRS-AE', 'ALNS')]
+    algs = [a for a in ex.METAHEURISTICS if rows and a in rows[0]]
 
     def table(key_fn, title):
         groups = defaultdict(list)
@@ -115,6 +115,7 @@ def main():
     ap.add_argument('--time-budget', type=float, default=None)
     ap.add_argument('--time-per-order', type=float, default=None)
     ap.add_argument('--allow-dirty', action='store_true')
+    ap.add_argument('--fresh', action='store_true', help="kayıtlı sonuçları yok say, baştan koş")
     args = ap.parse_args()
     proto = Protocol(depso_iter=args.depso_iter, n_seeds=args.seeds, time_budget=args.time_budget,
                      time_per_order=args.time_per_order)
@@ -134,7 +135,7 @@ def main():
     # Aynı depoyu kullanan işler art arda gelsin (işçi önbelleği için)
     git = ex.require_clean(args.allow_dirty)
     tasks = [(s, i, k, proto) for s in specs for k in args.k for i in range(args.sets)]
-    todo = [t for t in tasks if not _ckpt(*t).exists()]
+    todo = tasks if args.fresh else [t for t in tasks if not _ckpt(*t).exists()]
     print(f"{len(specs)} depo × {args.sets} set × k={args.k} → {len(tasks)} örnek "
           f"({len(tasks) - len(todo)} zaten bitmiş), {args.jobs} paralel işlem")
 

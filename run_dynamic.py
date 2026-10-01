@@ -46,12 +46,13 @@ from algorithms.alns import ALNS
 from algorithms.batching.first_fit import first_fit_batching
 from algorithms.depso import DEPSO
 from algorithms.rbrs_ae import RBRS_AE
+from algorithms.rbrs_ae2 import RBRS_AE2
 from algorithms.relocation import DynamicRelocation
 from algorithms.routing.route_cache import RouteCache
 from core.dynamic_data import from_generated, from_kubler, from_kubler_fig10
 
 OUT = Path("results") / "dynamic"
-ALGOS = ('DEPSO', 'RBRS-AE', 'ALNS', 'FIRSTFIT')
+ALGOS = ('DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS', 'FIRSTFIT')
 
 
 def solve(algo: str, orders, wh, seed: int, depso_iter: int):
@@ -65,6 +66,7 @@ def solve(algo: str, orders, wh, seed: int, depso_iter: int):
         return sum(rc.distance(b_locs(g)) for g in groups), groups
     solver = {'DEPSO': lambda: DEPSO(num_iterations=depso_iter, seed=seed),
               'RBRS-AE': lambda: RBRS_AE(seed=seed),
+              'RBRS-AE2': lambda: RBRS_AE2.recommended(seed=seed),
               'ALNS': lambda: ALNS(seed=seed)}[algo]()
     sol = solver.solve(orders, wh)
     return sol.total_travel_distance, [b.orders for b in sol.batches]

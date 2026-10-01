@@ -131,7 +131,7 @@ def algorithm_comparison(rows: list) -> list[str]:
     Üç algoritmanın karşılaştırması: senaryo bazında en kısa ortalama mesafe
     kimde, ortalama mesafe ve süre (sipariş sayısına göre).
     """
-    algs = [a for a in ('DEPSO', 'RBRS-AE', 'ALNS')
+    algs = [a for a in ('DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS')
             if all(a in r['stats'] for r in rows)]
     if len(algs) < 2:
         return []

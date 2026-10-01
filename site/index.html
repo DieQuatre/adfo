@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Raf Arası</title>
-<meta name="description" content="Depoda sipariş toplama: üç algoritmanın aynı siparişler için ürettiği rotalar, deney sonuçları ve dinamik yer ataması.">
+<meta name="description" content="Depoda sipariş toplama: algoritmaların aynı siparişler için ürettiği rotalar, deney sonuçları ve dinamik yer ataması.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -32,7 +32,7 @@
   <section class="wrap" style="padding-top:44px">
     <p class="eyebrow">Sipariş toplama optimizasyonu · araştırma projesi</p>
     <h1>Depoda en çok zaman <span class="tape">yürürken</span> geçer.</h1>
-    <p class="lede">Bir depoda siparişleri hazırlayan kişi (<b>toplayıcı</b>) arabasıyla raflar arasında dolaşıp ürünleri toplar. İş süresinin büyük kısmı yürümekle geçer. Bu proje, aynı siparişleri daha az yürüyerek toplamanın yollarını üç algoritmayla arıyor ve karşılaştırıyor.</p>
+    <p class="lede">Bir depoda siparişleri hazırlayan kişi (<b>toplayıcı</b>) arabasıyla raflar arasında dolaşıp ürünleri toplar. İş süresinin büyük kısmı yürümekle geçer. Bu proje, aynı siparişleri daha az yürüyerek toplamanın yollarını üç algoritmayla ve bunlardan birinin bizim geliştirdiğimiz iyileştirilmiş sürümüyle arıyor ve karşılaştırıyor.</p>
   </section>
 
   <section class="wrap" id="problem">
@@ -63,9 +63,9 @@
 
   <section class="wrap" id="algoritmalar">
     <p class="eyebrow">Algoritmalar</p>
-    <h2>Aynı soruya üç farklı yaklaşım</h2>
-    <p class="muted">Üçü de aynı kuralları kullanır: aynı araba kapasitesi, aynı rota hesabı. Tek fark, iyi bir gruplamayı nasıl aradıkları.</p>
-    <div class="grid3">
+    <h2>Aynı soruya farklı yaklaşımlar</h2>
+    <p class="muted">Hepsi aynı kuralları kullanır: aynı araba kapasitesi, aynı rota hesabı. Tek fark, iyi bir gruplamayı nasıl aradıkları.</p>
+    <div class="grid3 grid2x2">
       <article class="card algo-card" style="--c:var(--s1)">
         <h3><span class="dot"></span>DEPSO</h3>
         <p class="tagline">Birbirinden öğrenen bir sürü.</p>
@@ -75,6 +75,11 @@
         <h3><span class="dot"></span>RBRS-AE</h3>
         <p class="tagline">Önce en çok pişman olacağın kararı ver.</p>
         <p>Yerleştirmesi zor siparişler önce yerleştirilir: ertelenirse en çok maliyet çıkaracak olan. Sonra en verimsiz turlar sökülüp yeniden kurulur; sökme oranı zamanla azalır.</p>
+      </article>
+      <article class="card algo-card" style="--c:var(--s4)">
+        <h3><span class="dot"></span>RBRS-AE2</h3>
+        <p class="tagline">Bizim iyileştirmemiz: neyi sökeceğini değiştir.</p>
+        <p>RBRS-AE ile aynı fikir, iki farkla. Sökülecek siparişler her adımda farklı bir kuralla seçilir: en verimsiz turlar, depoda birbirine yakın siparişler ya da rastgele. Sökülenler de "en çok pişman olunacak" sırayla geri yerleştirilir.</p>
       </article>
       <article class="card algo-card" style="--c:var(--s3)">
         <h3><span class="dot"></span>ALNS</h3>
@@ -86,8 +91,8 @@
 
   <section class="wrap" id="yaris">
     <p class="eyebrow">Yarış</p>
-    <h2>Aynı siparişler, üç toplayıcı</h2>
-    <p class="muted">Üç toplayıcı aynı hızda yürür. Her biri kendi algoritmasının planını izler. Rotalar gerçek algoritma çıktısıdır.</p>
+    <h2>Aynı siparişler, dört toplayıcı</h2>
+    <p class="muted">Toplayıcılar aynı hızda yürür. Her biri kendi algoritmasının planını izler. Rotalar gerçek algoritma çıktısıdır.</p>
     <div class="controls" role="group" aria-label="Yarış ayarları">
       <label class="inline" for="raceSel">Problem <select id="raceSel"></select></label>
       <button class="btn" id="playBtn" type="button">Durdur</button>
@@ -123,7 +128,7 @@
   <section class="wrap" id="karsilastirma">
     <p class="eyebrow">Adil karşılaştırma</p>
     <h2>Aynı süre verilince hangisi daha kısa yol buluyor?</h2>
-    <p class="muted">Üç algoritmaya her örnekte aynı süre verildi ve her örnek birkaç farklı başlangıçla (tohum) çözüldü. Böylece bir algoritmanın yalnızca daha uzun çalıştığı için önde olup olmadığı ve farkın şans eseri olup olmadığı ayırt edilebiliyor.</p>
+    <p class="muted">Algoritmalara her örnekte aynı süre verildi ve her örnek birkaç farklı başlangıçla (tohum) çözüldü. Böylece bir algoritmanın yalnızca daha uzun çalıştığı için önde olup olmadığı ve farkın şans eseri olup olmadığı ayırt edilebiliyor.</p>
     <div class="viewbar">
       <label class="inline" for="cmpSel">Deney <select id="cmpSel"></select></label>
       <label class="inline" for="cmpBy">Kırılım <select id="cmpBy"></select></label>

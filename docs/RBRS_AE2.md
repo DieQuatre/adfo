@@ -65,12 +65,50 @@ iniyor.
 Uyarı: 8 örnek az; ayarları bu sete göre seçtik. Sonuç geniş sette
 doğrulanmalı (aşağıdaki komut).
 
-## Geniş doğrulama
-
-```bash
-python rbrs_ablation.py --jobs 16 --full --seeds 5
-```
+## Geniş doğrulama (Kübra'nın bilgisayarında, kod 52211a4)
 
 85 örnek (5 000 / 10 000 / 20 000 lokasyon × 3 koridor yapısı × 50/100/200
-sipariş × 3 set + 4 Kübler örneği), bütün varyantlar + ALNS, 5 tohum.
-16 paralel işlemle ~30–40 dk. Sonuç: `results/rbrs_ablation/full_s5_tpo0.05.md`.
+sipariş × 3 set + 4 Kübler örneği), 5 tohum, sipariş başına 0,05 sn.
+
+| Varyant | ALNS'ye göre | Özgün RBRS-AE'ye göre | Özgünden iyi | p |
+|---|---|---|---|---|
+| özgün RBRS-AE | %+4,72 | — | — | — |
+| +destroy | %+2,64 | %−1,96 | 55/85 | < 0,001 |
+| +repair | %+4,85 | %+0,12 | 22/85 | 0,301 |
+| +accept | %+5,39 | %+0,63 (kötü) | 21/85 | 0,029 |
+| +moves | %+4,99 | %+0,26 (kötü) | 23/85 | 0,014 |
+| +final | %+4,71 | %−0,01 | 26/85 | 0,111 |
+| +size | %+4,76 | %+0,03 | 5/85 | 0,095 |
+| +ls | %+4,79 | %+0,06 | 11/85 | 0,017 |
+| hepsi | %+2,71 | %−1,89 | 55/85 | < 0,001 |
+| **RBRS-AE2** (destroy + repair) | **%+2,08** | **%−2,49** | **59/85** | **< 0,001** |
+
+Kırılım (RBRS-AE2'nin özgüne göre farkı):
+
+| | 50 sipariş | 100 sipariş | 200 sipariş |
+|---|---|---|---|
+| RBRS-AE2 − özgün | %−0,01 (1/27) | %−3,88 (27/27) | %−3,40 (27/27) |
+| RBRS-AE2 − ALNS | %+3,25 | %+0,87 | %+2,56 |
+
+Kübler örneklerinde: 10 satırlı siparişlerde (100_10_10, 200_10_10) RBRS-AE2
+ALNS'den %2,3 ve %2,9 **daha iyi**.
+
+Sonuç: küçük setteki %5'lik fark abartılıydı; geniş sette %2,5. Yine de
+anlamlı ve 100–200 siparişte istisnasız. Regret yerleştirme tek başına
+etkisiz, çeşitli yıkımla birlikte ek kazanç veriyor.
+
+## 50 siparişte neden fark yok? (Paket 15'te düzeltildi)
+
+50 siparişlik örnekler yalnızca 2 gruba sığıyor. Özgün eleme kuralı 2 ve daha
+az grupta hiç çalışmıyor (`len(batches) <= 2` → atla); RBRS-AE2 de bu kuralı
+devraldığı için küçük örneklerde arama yalnızca shift/swap'a kalıyordu.
+RBRS-AE2'de sınır 2 gruba indirildi (sipariş düzeyinde yıkım 2 grupta da
+anlamlı). Kontrol (9 örnek, k = 50, 2 tohum): RBRS-AE2 özgünden %2,9 kısa
+(9/9), ALNS'ye fark %3,5'ten %0,5'e indi.
+
+Özgün RBRS-AE'de bu davranış korunuyor (tanımı gereği).
+
+## Sonraki adım
+
+RBRS-AE2 dördüncü algoritma olarak bütün deneylere eklendi
+(`core/experiment.py`, `run_dynamic.py`, site). Komutlar: docs/DENEY_PROTOKOLU.md.
