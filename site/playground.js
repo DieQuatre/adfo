@@ -88,7 +88,7 @@ function run() {
   if (!orders.length || state.busy) return;
   state.busy = true; $('pgRun').disabled = true; $('pgRun').textContent = 'Hesaplanıyor…';
   const prog = $('pgProgress'); prog.hidden = false;
-  prog.innerHTML = ['DEPSO', 'RBRS-AE', 'ALNS'].map(a =>
+  prog.innerHTML = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS'].map(a =>
     `<div class="pbar" style="--c:var(${SERIES[a]})"><span>${a}</span><span class="track"><span class="fill" data-a="${a}"></span></span><span class="mono" data-p="${a}">%0</span></div>`).join('');
   const input = {layout: state.layout, orders, capacity: +$('pgCap').value, seed: state.seed};
   const onP = (a, x) => {
