@@ -1,8 +1,8 @@
 /*
  * Raf Arası — "Kendin dene" tarayıcı çözücüsü.
  *
- * Araştırmanın Python kodundaki üç algoritmanın (DEPSO, RBRS-AE, ALNS) aynı
- * mantıkla ama hafifletilmiş ayarlarla JavaScript sürümü. Sonuçlar resmî
+ * Araştırmanın Python kodundaki dört algoritmanın (DEPSO, RBRS-AE, RBRS-AE2,
+ * ALNS) aynı mantıkla ama hafifletilmiş ayarlarla JavaScript sürümü. Sonuçlar resmî
  * deneylerle birebir aynı olmak zorunda değildir.
  *
  * rafSolverLib() kendi içinde tamamdır: hem ana sayfada hem Web Worker içinde
@@ -238,8 +238,11 @@ function rafSolverLib() {
 
   // ════════════════════════════════════════════════════════════════════
   // RBRS-AE (hafif): öncelik + regret ataması, shift/swap, uyarlanır eleme
+  // v2 = RBRS-AE2: eleme kuralı her adımda üçünden biri (en kötü turlar /
+  // konumca yakın siparişler / rastgele), geri yerleştirme regret-2 ile,
+  // eleme 2 turda da çalışır. xy: siparişlerin ağırlık merkezi [x, y].
   // ════════════════════════════════════════════════════════════════════
-  function rbrsae(orders, Q, RS, R, cfg, progress) {
+  function rbrsae(orders, Q, RS, R, cfg, progress, v2, xy) {
     const n = orders.length;
     const ad = [], vr = [], wt = [];
     orders.forEach(o => {
@@ -292,7 +295,34 @@ function rafSolverLib() {
         if (da + dc < bs[a].d + bs[c].d - 1e-9) { Object.assign(bs[a], {o: na, w: wa, d: da}); Object.assign(bs[c], {o: nc, w: wc, d: dc}); }
       }
       // uyarlanır eleme (%20 → %10)
-      if (bs.length > 2) {
+      if (v2 && bs.length >= 2) {
+        const pct = .2 - .1 * it / iters;
+        const mode = R.pick(['worst', 'related', 'random']);
+        let freed;
+        if (mode === 'worst') {
+          const sc = b => .7 * b.d / b.o.length + .3 * (1 - b.w / Q);
+          const kill = new Set(bs.slice().sort((x, y) => sc(y) - sc(x)).slice(0, Math.max(1, Math.floor(bs.length * pct))));
+          freed = [...kill].flatMap(b => b.o);
+          bs = bs.filter(b => !kill.has(b));
+        } else {
+          const all = bs.flatMap(b => b.o), q = Math.min(all.length, Math.max(2, Math.round(pct * all.length)));
+          if (mode === 'related') {
+            const s0 = xy[R.pick(all)];
+            all.sort((a, b) => (Math.abs(xy[a][0] - s0[0]) + Math.abs(xy[a][1] - s0[1])) - (Math.abs(xy[b][0] - s0[0]) + Math.abs(xy[b][1] - s0[1])));
+            freed = all.slice(0, q);
+          } else freed = R.shuffle(all).slice(0, q);
+          const out = new Set(freed);
+          bs.forEach(b => { const rest = b.o.filter(i => !out.has(i)); if (rest.length !== b.o.length) { b.o = rest; b.w = rest.reduce((s, i) => s + orders[i].w, 0); b.d = rest.length ? cost(b) : 0; } });
+          bs = bs.filter(b => b.o.length);
+        }
+        // regret-2, öncelik ağırlıklı
+        const todo = new Set(freed);
+        while (todo.size) {
+          let best = null;
+          for (const i of todo) { const op = insertOpts(i, bs); const reg = op.length > 1 ? op[1][0] - op[0][0] : Infinity; const sc = reg * (1 + pri[i]); if (!best || sc > best[0]) best = [sc, i, op[0][1]]; }
+          put(bs, best[1], best[2]); todo.delete(best[1]);
+        }
+      } else if (!v2 && bs.length > 2) {
         const pct = .2 - .1 * it / iters;
         const sc = b => .7 * b.d / b.o.length + .3 * (1 - b.w / Q);
         const order = bs.slice().sort((x, y) => sc(y) - sc(x));
@@ -397,7 +427,9 @@ function rafSolverLib() {
     const orders = input.orders, Q = input.capacity;
     const cfg = Object.assign({depsoIter: 120, rbrsIter: 40, alnsIter: 250}, input.cfg || {});
     const out = [];
-    const algos = [['DEPSO', depso], ['RBRS-AE', rbrsae], ['ALNS', alns]];
+    const xy = orders.map(o => [o.locs.reduce((s, l) => s + L.locs[l].x, 0) / o.locs.length, o.locs.reduce((s, l) => s + L.locs[l].y, 0) / o.locs.length]);
+    const rbrsae2 = (o, q, rs, r, c, p) => rbrsae(o, q, rs, r, c, p, true, xy);
+    const algos = [['DEPSO', depso], ['RBRS-AE', rbrsae], ['RBRS-AE2', rbrsae2], ['ALNS', alns]];
     for (const [name, fn] of algos) {
       const RS = routeService(L);
       const t0 = Date.now();

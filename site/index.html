@@ -18,6 +18,8 @@
     <nav aria-label="Bölümler">
       <a href="#problem">Problem</a>
       <a href="#algoritmalar">Algoritmalar</a>
+      <a href="#rbrs-ae">RBRS-AE</a>
+      <a href="#rbrs-ae2">RBRS-AE2</a>
       <a href="#yaris">Yarış</a>
       <a href="#deneyler">Deneyler</a>
       <a href="#karsilastirma">Karşılaştırma</a>
@@ -75,11 +77,13 @@
         <h3><span class="dot"></span>RBRS-AE</h3>
         <p class="tagline">Önce en çok pişman olacağın kararı ver.</p>
         <p>Yerleştirmesi zor siparişler önce yerleştirilir: ertelenirse en çok maliyet çıkaracak olan. Sonra en verimsiz turlar sökülüp yeniden kurulur; sökme oranı zamanla azalır.</p>
+        <a class="more" href="#rbrs-ae">Nasıl çalışır →</a>
       </article>
       <article class="card algo-card" style="--c:var(--s4)">
         <h3><span class="dot"></span>RBRS-AE2</h3>
         <p class="tagline">Bizim iyileştirmemiz: neyi sökeceğini değiştir.</p>
         <p>RBRS-AE ile aynı fikir, iki farkla. Sökülecek siparişler her adımda farklı bir kuralla seçilir: en verimsiz turlar, depoda birbirine yakın siparişler ya da rastgele. Sökülenler de "en çok pişman olunacak" sırayla geri yerleştirilir.</p>
+        <a class="more" href="#rbrs-ae2">Neyi değiştirdik →</a>
       </article>
       <article class="card algo-card" style="--c:var(--s3)">
         <h3><span class="dot"></span>ALNS</h3>
@@ -87,6 +91,70 @@
         <p>Her adımda planın bir kısmı sökülür ve farklı yollarla yeniden kurulur. Hangi sökme ve kurma yöntemi daha çok işe yarıyorsa ona daha sık başvurulur.</p>
       </article>
     </div>
+  </section>
+
+  <section class="wrap" id="rbrs-ae">
+    <p class="eyebrow">Özgün algoritma · ilk sürüm</p>
+    <h2>RBRS-AE: önce en zor siparişi yerleştir</h2>
+    <p class="muted">RBRS-AE bu proje için geliştirdiğimiz ilk yöntem. Adı İngilizce "rota tabanlı pişmanlık araması ve uyarlamalı eleme" sözlerinin kısaltması. Fikri basit: bir siparişi yerleştirmeyi ertelersen sonradan ne kadar pahalıya patlayacağını düşün ve en pahalıya patlayacak olanı önce yerleştir.</p>
+    <div class="rb">
+      <ol class="steps">
+        <li><b>Siparişleri tanı.</b> Her sipariş için ürünlerin kapıya ne kadar uzak olduğuna, birbirinden ne kadar dağınık olduğuna ve ne kadar ağır olduğuna bakılır. Uzak, dağınık ve ağır siparişler "zor" sayılır.</li>
+        <li><b>Pişmanlık sırasıyla yerleştir.</b> Her sipariş için en uygun tur ile ikinci en uygun tur arasındaki fark hesaplanır. Fark büyükse o siparişi şimdi yerleştirmemek pahalıdır, çünkü en iyi yeri dolarsa çok daha kötü bir yere düşer. Bu farkı en büyük olan sipariş önce yerleştirilir.</li>
+        <li><b>Küçük düzeltmeler yap.</b> Bir siparişi başka bir tura kaydırmak ya da iki turdan birer siparişi değiş tokuş etmek yolu kısaltıyorsa yapılır.</li>
+        <li><b>Verimsiz turları sök.</b> Sipariş başına en çok yürüyen ve arabayı en az dolduran turlar tamamen sökülür, siparişleri kalan turlara yeniden dağıtılır. Başta turların beşte biri sökülür, zamanla bu oran onda bire iner.</li>
+        <li><b>Son rötuş.</b> Süre bitince en iyi plan üzerinde siparişler tek tek denenir; başka bir tura taşınınca yol kısalıyorsa taşınır.</li>
+      </ol>
+      <figure class="card rb-fig">
+        <div class="rb-bar">
+          <label class="inline" for="rb1Sel">Örnek <select id="rb1Sel"></select></label>
+          <div class="seg" id="rb1Mode" role="group" aria-label="Gösterim">
+            <button type="button" data-v="plan" aria-pressed="true">Plan</button>
+            <button type="button" data-v="elim" aria-pressed="false">Eleme adımı</button>
+          </div>
+        </div>
+        <canvas id="rb1Canvas" role="img" aria-label="RBRS-AE planı: her tur ayrı renkte"></canvas>
+        <div class="tours" id="rb1Tours"></div>
+        <figcaption class="small muted" id="rb1Cap"></figcaption>
+      </figure>
+    </div>
+    <h3 class="h3">Nerede zorlanıyor?</h3>
+    <div class="grid3">
+      <article class="card"><span class="step">1</span><p><b>Hep aynı turları söküyor.</b> Hangi turun verimsiz olduğu her adımda aynı ölçüyle hesaplandığı için art arda adımlarda çoğunlukla aynı turlar sökülüp benzer şekilde yeniden kuruluyor. Arama yerinde sayıyor.</p></article>
+      <article class="card"><span class="step">2</span><p><b>Siparişlerin yerini görmüyor.</b> Deponun aynı köşesinden ürün isteyen iki sipariş farklı turlara düşmüşse onları buluşturacak bir adım yok.</p></article>
+      <article class="card"><span class="step">3</span><p><b>Söktüklerini aceleyle geri koyuyor.</b> Sökülen siparişler sırayla o an en ucuz tura konuyor. Başlangıçta kullandığı pişmanlık fikri burada kullanılmıyor.</p></article>
+    </div>
+    <h3 class="h3">Sonuçlar</h3>
+    <div class="statgrid" id="rb1Stats"></div>
+    <p class="headline" id="rb1Headline"></p>
+  </section>
+
+  <section class="wrap" id="rbrs-ae2">
+    <p class="eyebrow">Özgün algoritma · iyileştirilmiş sürüm</p>
+    <h2>RBRS-AE2: neyi söktüğünü değiştir</h2>
+    <p class="muted">RBRS-AE'nin zorlandığı üç noktaya göre yaptığımız değişiklikler. Algoritmanın geri kalanı aynı: aynı başlangıç, aynı küçük düzeltmeler, aynı son rötuş. Denediğimiz yedi değişiklikten yalnızca ikisi işe yaradı; diğerleri sonucu değiştirmedi ya da kötüleştirdi ve son sürüme alınmadı.</p>
+    <h3 class="h3">1. Sökme kuralı her adımda değişir</h3>
+    <p class="muted">Her adımda üç kuraldan biri rastgele seçilir. Aynı plan üzerinde her kuralın söktüğü siparişler işaretli:</p>
+    <div class="grid3" id="rb2Rules">
+      <figure class="card"><span class="step">KURAL A · ESKİSİ GİBİ</span><h3>En verimsiz tur</h3><canvas id="rb2RuleWorst" role="img" aria-label="En verimsiz turun siparişleri sökülüyor"></canvas><p>Sipariş başına en çok yürüyen tur tamamen sökülür.</p></figure>
+      <figure class="card"><span class="step">KURAL B · YENİ</span><h3>Birbirine yakın siparişler</h3><canvas id="rb2RuleNear" role="img" aria-label="Depoda birbirine yakın siparişler sökülüyor"></canvas><p>Rastgele bir sipariş ve depoda ona en yakın siparişler, hangi turda olurlarsa olsunlar birlikte sökülür. Böylece aynı tura girme şansı bulurlar.</p></figure>
+      <figure class="card"><span class="step">KURAL C · YENİ</span><h3>Rastgele siparişler</h3><canvas id="rb2RuleRand" role="img" aria-label="Rastgele siparişler sökülüyor"></canvas><p>Rastgele seçilen siparişler sökülür. Aramanın hep aynı yerde dönmesini engeller.</p></figure>
+    </div>
+    <div class="rb-bar" style="margin-top:10px"><button class="btn ghost" id="rb2Reroll" type="button">Başka bir seçim göster</button><span class="small muted" style="margin:0">Çizimler kuralın fikrini gösterir; işaretli kareler sökülen siparişlerin ürünleri.</span></div>
+    <div class="grid3 grid2">
+      <article class="card"><h3>2. Sökülenler pişmanlık sırasıyla geri konur</h3><p>Eski sürümde sökülen siparişler sırayla en ucuz tura konuyordu. Yenisinde başlangıçtaki kural burada da kullanılır: en iyi ve ikinci en iyi tur arasındaki farkı en büyük olan sipariş önce yerleştirilir. Bu değişiklik tek başına fark yaratmıyor, ama yeni sökme kurallarıyla birlikte ek kazanç getiriyor.</p></article>
+      <article class="card"><h3>3. Küçük örneklerde de çalışır</h3><p>Eski sürümde plan iki ya da daha az turdan oluşuyorsa sökme adımı hiç çalışmıyordu. 50 siparişlik örnekler çoğunlukla iki tura sığdığı için bu örneklerde arama yalnızca küçük düzeltmelere kalıyordu. Yeni sürümde sökme iki turda da çalışır.</p></article>
+    </div>
+    <h3 class="h3">Aynı siparişler, eski ve yeni plan</h3>
+    <div class="rb-bar"><label class="inline" for="rb2Sel">Örnek <select id="rb2Sel"></select></label></div>
+    <div class="pair2">
+      <figure class="card rb-fig"><div class="pair-head"><span class="tag" style="--c:var(--s2)"><span class="dot"></span>RBRS-AE</span><span class="mono small" id="rb2OldTot"></span></div><canvas id="rb2Old" role="img" aria-label="RBRS-AE planı"></canvas><div class="tours" id="rb2OldTours"></div></figure>
+      <figure class="card rb-fig"><div class="pair-head"><span class="tag" style="--c:var(--s4)"><span class="dot"></span>RBRS-AE2</span><span class="mono small" id="rb2NewTot"></span></div><canvas id="rb2New" role="img" aria-label="RBRS-AE2 planı"></canvas><div class="tours" id="rb2NewTours"></div></figure>
+    </div>
+    <p class="headline" id="rb2PairHeadline"></p>
+    <h3 class="h3">Sonuçlar</h3>
+    <div class="statgrid" id="rb2Stats"></div>
+    <p class="headline" id="rb2Headline"></p>
   </section>
 
   <section class="wrap" id="yaris">
@@ -148,8 +216,8 @@
     <div class="chartbox" id="dynbox"></div>
     <p class="headline" id="dynHeadline"></p>
     <div id="dynCmp" hidden>
-      <h3 class="h3">Üç algoritma yan yana</h3>
-      <p class="muted">Aynı depoda üç algoritma aynı taşımaları yapar; fark yalnızca siparişleri gruplama ve rota planından gelir. Yüzde kazanç her algoritmanın kendi taşımasız mesafesine göre hesaplandığı için, başlangıç planı zayıf olan algoritma daha büyük yüzde kazanır. Hangisinin daha az yürüttüğünü görmek için taşımadan sonraki toplam mesafeye bakmak gerekir.</p>
+      <h3 class="h3">Algoritmalar yan yana</h3>
+      <p class="muted">Aynı depoda bütün algoritmalar aynı taşımaları yapar; fark yalnızca siparişleri gruplama ve rota planından gelir. Yüzde kazanç her algoritmanın kendi taşımasız mesafesine göre hesaplandığı için, başlangıç planı zayıf olan algoritma daha büyük yüzde kazanır. Hangisinin daha az yürüttüğünü görmek için taşımadan sonraki toplam mesafeye bakmak gerekir.</p>
       <div class="chartbox" id="dynCmpBox"></div>
       <div class="tablewrap" id="dynCmpTable"></div>
       <p class="headline" id="dynCmpHeadline"></p>
@@ -167,7 +235,7 @@
   <section class="wrap" id="kendin-dene">
     <p class="eyebrow">Kendin dene</p>
     <h2>Kendi deponu kur, algoritmaları yarıştır</h2>
-    <p class="muted">Depoyu ve siparişleri sen belirle; üç algoritma planı senin tarayıcında hesaplasın. Bu bölüm algoritmaların tarayıcı sürümüyle ve hafifletilmiş ayarlarla çalışır. Yukarıdaki deney sonuçları ise araştırmanın resmî koduyla üretildi.</p>
+    <p class="muted">Depoyu ve siparişleri sen belirle; dört algoritma planı senin tarayıcında hesaplasın. Bu bölüm algoritmaların tarayıcı sürümüyle ve hafifletilmiş ayarlarla çalışır. Yukarıdaki deney sonuçları ise araştırmanın resmî koduyla üretildi.</p>
     <div class="pg">
       <div class="pg-form">
         <fieldset>

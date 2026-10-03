@@ -155,3 +155,36 @@ legend{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;
 .pbar .fill{height:100%;width:0;background:var(--c);border-radius:3px}
 [hidden]{display:none!important}
 .pbar .track,.pbar .fill{display:block}
+
+/* RBRS bölümleri */
+:root{--t1:#2a78d6;--t2:#eb6834;--t3:#1baf7a;--t4:#c2408f;--t5:#8f7a12;--t6:#5c6bc0}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--t1:#4a95ee;--t2:#f07c47;--t3:#2fc48c;--t4:#e066ad;--t5:#c9ad32;--t6:#8c9bf0}}
+:root[data-theme="dark"]{--t1:#4a95ee;--t2:#f07c47;--t3:#2fc48c;--t4:#e066ad;--t5:#c9ad32;--t6:#8c9bf0}
+.more{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;margin-top:auto}
+.more:hover{text-decoration:underline}
+.rb{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:20px;margin-top:22px;align-items:start}
+@media (max-width:860px){.rb{grid-template-columns:1fr}}
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:12px;color:var(--ink-2);font-size:15px;max-width:62ch}
+.steps b{color:var(--ink)}
+.rb-fig{margin:0}
+.rb-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.tours{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--ink-2)}
+.tours span{display:inline-flex;align-items:center;gap:6px}
+.tours i{width:12px;height:12px;border-radius:2px;display:inline-block}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.stat .lbl{font-size:13px;color:var(--muted)}
+.stat .val{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:34px;font-weight:600;line-height:1.05}
+.stat .val.good{color:var(--good)}
+.stat .sub{font-size:13px;color:var(--ink-2)}
+.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+.grid3 figure.card{margin:0}
+.pair2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
+@media (max-width:760px){.pair2{grid-template-columns:1fr}}
+.pair-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rb>*{min-width:0}
+.rb-bar label.inline{max-width:100%;min-width:0}
+.rb-bar select{max-width:100%;min-width:0;text-overflow:ellipsis}
+.controls label.inline{max-width:100%;min-width:0}
+.controls select{max-width:100%;min-width:0;text-overflow:ellipsis}

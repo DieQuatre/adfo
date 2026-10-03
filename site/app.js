@@ -434,7 +434,7 @@ function initDynamic() {
   initDynamicCompare();
 }
 
-// Kendi depolarımızda üç algoritmanın taşımalı mesafesi (aynı taşıma kararları)
+// Kendi depolarımızda algoritmaların taşımalı mesafesi (aynı taşıma kararları)
 function initDynamicCompare() {
   const algs = ['DEPSO', 'RBRS-AE', 'RBRS-AE2', 'ALNS'].filter(a => a !== 'RBRS-AE2' || C.dynamic.some(d => d.algorithm === a));
   const by = {};
@@ -585,9 +585,191 @@ function initReference() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// RBRS-AE VE RBRS-AE2 BÖLÜMLERİ
+// ════════════════════════════════════════════════════════════════════
+const TOURS = ['--t1', '--t2', '--t3', '--t4', '--t5', '--t6'];
+const tourCol = k => css(TOURS[k % TOURS.length]);
+function raceLabel(r) {
+  const m = r.id.match(/^S(\d+)_B(\d)_F(\d+)_\w+?_s\d+__k(\d+)/);
+  return m ? `${nf(+m[1])} lok. · ${dimValueLabel('blocks', +m[2])} · ${m[4]} sipariş` : r.id;
+}
+/** Bir planı çiz: her tur kendi renginde. hi: vurgulanacak durak anahtarları (Set), dimOthers: kalanlar soluk. */
+function drawPlan(canvas, geom, alg, opt = {}) {
+  const T = fitCanvas(canvas, geom), ctx = canvas.getContext('2d');
+  drawFloor(ctx, geom, T);
+  const n = alg.batches.length;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  alg.batches.forEach((b, k) => {
+    if (opt.noPaths) return;
+    const off = (k - (n - 1) / 2) * 0.28;
+    ctx.strokeStyle = tourCol(k); ctx.lineWidth = Math.max(1.5, T.s * .22);
+    ctx.globalAlpha = opt.focus === undefined || opt.focus === k ? .85 : .15;
+    ctx.beginPath();
+    b.path.forEach((p, i) => { const [x, y] = T.P(p[0] + off, p[1] + off); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+  alg.batches.forEach((b, k) => b.stops.forEach(st => {
+    const [x, y, w] = stopCell(T, st), key = st.join(',');
+    const isHi = opt.hi && opt.hi.has(key);
+    if (opt.hi && !isHi) { ctx.globalAlpha = .28; ctx.fillStyle = opt.mono ? css('--muted') : tourCol(k); ctx.fillRect(x + 1, y + 1, w - 2, w - 2); ctx.globalAlpha = 1; return; }
+    ctx.fillStyle = opt.mono ? css('--ink') : tourCol(k);
+    ctx.fillRect(x, y, w, w);
+    if (isHi) { ctx.strokeStyle = css('--ink'); ctx.lineWidth = Math.max(1.5, w * .22); ctx.strokeRect(x - 1, y - 1, w + 2, w + 2); }
+  }));
+}
+function tourLegend(el, alg, extra) {
+  el.innerHTML = alg.batches.map((b, k) =>
+    `<span><i style="background:var(${TOURS[k % TOURS.length]})"></i>Tur ${k + 1} · ${nf(b.orders)} sipariş · ${nf(b.dist)} LU${extra && extra(k) ? ' · ' + extra(k) : ''}</span>`).join('');
+}
+const worstTour = alg => alg.batches.reduce((bi, b, k, a) => b.dist / b.orders > a[bi].dist / a[bi].orders ? k : bi, 0);
+function pct(v, d = 1) { return '%' + nf(Math.abs(v), d); }
+/** Karşılaştırmada a ile b arasındaki fark: a − b (%), a'nın daha iyi olduğu örnek sayısı. */
+function pairOf(c, a, b) {
+  const p = (c.pairs || []).find(x => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+  if (!p) return null;
+  return p.a === a ? {diff: p.diff_pct, better: p.a_better, worse: p.b_better, p: p.p}
+                   : {diff: -p.diff_pct, better: p.b_better, worse: p.a_better, p: p.p};
+}
+/** Her deney türü için (Kübler / kendi depolarımız) verilen algoritmaları içeren karşılaştırma; dört algoritmalı (en yeni) olan öncelikli. */
+function latestCmp(algs) {
+  const out = {};
+  (C.comparisons || []).forEach(c => {
+    if (!algs.every(a => a in (c.wins || {}))) return;
+    const prev = out[c.kind];
+    if (!prev || Object.keys(c.wins).length > Object.keys(prev.wins).length) out[c.kind] = c;
+  });
+  return out;
+}
+const KIND_NAME = {kubler: "Kübler'in deney senaryoları", grid: 'Kendi ürettiğimiz depolar'};
+const DATIVE = {'DEPSO': "DEPSO'ya", 'ALNS': "ALNS'ye", 'RBRS-AE': "RBRS-AE'ye", 'RBRS-AE2': "RBRS-AE2'ye"};
+function statTile(label, diff, sub) {
+  const better = diff < 0;
+  return `<div class="stat"><span class="lbl">${esc(label)}</span><span class="val${better ? ' good' : ''}">${pct(diff)} ${better ? 'daha kısa' : 'daha uzun'}</span><span class="sub">${sub}</span></div>`;
+}
+function pairTile(c, a, b) {
+  const q = pairOf(c, a, b);
+  if (!q) return '';
+  const sig = q.p !== null && q.p !== undefined && q.p < 0.05;
+  return statTile(`${KIND_NAME[c.kind]} · ${DATIVE[b] || b} göre`, q.diff,
+    `${nf(c.n)} örneğin ${nf(q.better)} tanesinde daha kısa yol${sig ? '' : ' · fark istatistik olarak anlamlı değil'}`);
+}
+const topAlg = c => Object.entries(c.wins).filter(([k]) => k !== 'berabere').sort((x, y) => y[1] - x[1])[0][0];
+function initRbrs() {
+  const races = C.races || [];
+  const has = n => races.length && races[0].algorithms.some(a => a.name === n);
+  if (!has('RBRS-AE')) { document.getElementById('rbrs-ae').hidden = true; }
+  if (!has('RBRS-AE2')) { document.getElementById('rbrs-ae2').hidden = true; }
+  const algOf = (r, n) => r.algorithms.find(a => a.name === n);
+  const fillSel = sel => races.forEach((r, i) => sel.insertAdjacentHTML('beforeend', `<option value="${i}">${esc(raceLabel(r))}</option>`));
+  const pickDefault = sel => { const i = races.findIndex(r => r.algorithms.find(a => a.name === 'RBRS-AE').batches.length > 2); if (i >= 0) sel.value = i; };
+
+  // ── RBRS-AE: plan ve eleme adımı
+  const s1 = document.getElementById('rb1Sel'), m1 = document.getElementById('rb1Mode');
+  let mode1 = 'plan';
+  const render1 = () => {
+    const r = races[+s1.value || 0], a = algOf(r, 'RBRS-AE');
+    const w = worstTour(a);
+    if (mode1 === 'elim') {
+      drawPlan(document.getElementById('rb1Canvas'), r.geometry, a, {focus: w, hi: new Set(a.batches[w].stops.map(s => s.join(',')))});
+      document.getElementById('rb1Cap').textContent = `Tur ${w + 1} sipariş başına en çok yürüyen tur (${nf(a.batches[w].dist / a.batches[w].orders, 1)} LU/sipariş). Eleme adımında bu tur sökülür, ${nf(a.batches[w].orders)} siparişi diğer turlara dağıtılır. Bir sonraki adımda da büyük olasılıkla yine aynı tur seçilir.`;
+    } else {
+      drawPlan(document.getElementById('rb1Canvas'), r.geometry, a);
+      document.getElementById('rb1Cap').textContent = `RBRS-AE'nin bu örnek için bulduğu plan: ${nf(a.batches.length)} tur, toplam ${nf(a.total)} LU. Her renk bir tur; tur kapıdan (▲) başlar ve kapıda biter.`;
+    }
+    tourLegend(document.getElementById('rb1Tours'), a, k => mode1 === 'elim' && k === w ? 'sökülecek' : '');
+  };
+  if (has('RBRS-AE')) {
+    fillSel(s1); pickDefault(s1);
+    s1.addEventListener('change', render1);
+    m1.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; mode1 = b.dataset.v; m1.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); render1(); });
+    render1(); onTheme(render1);
+  }
+
+  // ── RBRS-AE2: üç sökme kuralı, eski ve yeni plan
+  if (has('RBRS-AE2')) {
+    const s2 = document.getElementById('rb2Sel');
+    fillSel(s2);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    let pickNear = null, pickRand = null;
+    const reroll = () => { pickNear = rnd(); pickRand = Array.from({length: 400}, rnd); };
+    reroll();
+    const renderRules = () => {
+      const r = races[+s2.value || 0], a = algOf(r, 'RBRS-AE2');
+      const stops = a.batches.flatMap(b => b.stops);
+      const q = Math.max(3, Math.round(stops.length * .2));
+      const w = worstTour(a);
+      drawPlan(document.getElementById('rb2RuleWorst'), r.geometry, a, {noPaths: true, mono: true, hi: new Set(a.batches[w].stops.map(s => s.join(',')))});
+      const s0 = stops[Math.floor(pickNear * stops.length)];
+      const near = stops.slice().sort((x, y) => (Math.abs(x[0] - s0[0]) + Math.abs(x[1] - s0[1])) - (Math.abs(y[0] - s0[0]) + Math.abs(y[1] - s0[1]))).slice(0, q);
+      drawPlan(document.getElementById('rb2RuleNear'), r.geometry, a, {noPaths: true, mono: true, hi: new Set(near.map(s => s.join(',')))});
+      const order = stops.map((s, i) => [pickRand[i % pickRand.length], s]).sort((x, y) => x[0] - y[0]).slice(0, q).map(x => x[1]);
+      drawPlan(document.getElementById('rb2RuleRand'), r.geometry, a, {noPaths: true, mono: true, hi: new Set(order.map(s => s.join(',')))});
+    };
+    const renderPair = () => {
+      const r = races[+s2.value || 0], o = algOf(r, 'RBRS-AE'), n = algOf(r, 'RBRS-AE2');
+      drawPlan(document.getElementById('rb2Old'), r.geometry, o);
+      drawPlan(document.getElementById('rb2New'), r.geometry, n);
+      tourLegend(document.getElementById('rb2OldTours'), o); tourLegend(document.getElementById('rb2NewTours'), n);
+      document.getElementById('rb2OldTot').textContent = `${nf(o.batches.length)} tur · ${nf(o.total)} LU`;
+      document.getElementById('rb2NewTot').textContent = `${nf(n.batches.length)} tur · ${nf(n.total)} LU`;
+      const d = 100 * (n.total - o.total) / o.total;
+      document.getElementById('rb2PairHeadline').textContent = Math.abs(d) < 0.05 ? 'Bu örnekte iki sürüm aynı uzunlukta plan buldu.' :
+        `Bu örnekte RBRS-AE2'nin planı eskisinden ${pct(d)} ${d < 0 ? 'kısa' : 'uzun'} (${nf(Math.abs(n.total - o.total))} LU). Rotalar araştırmanın resmî kodunun çıktısıdır.`;
+    };
+    const render2 = () => { renderRules(); renderPair(); };
+    s2.addEventListener('change', render2);
+    document.getElementById('rb2Reroll').addEventListener('click', () => { reroll(); renderRules(); });
+    render2(); onTheme(render2);
+  }
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (has('RBRS-AE')) render1(); if (has('RBRS-AE2')) document.getElementById('rb2Sel').dispatchEvent(new Event('change')); }, 150); });
+
+  // ── sonuç kutucukları
+  const c1 = latestCmp(['RBRS-AE', 'DEPSO', 'ALNS']);
+  let h1 = '';
+  ['kubler', 'grid'].forEach(k => { if (c1[k]) h1 += pairTile(c1[k], 'RBRS-AE', 'DEPSO') + pairTile(c1[k], 'RBRS-AE', 'ALNS'); });
+  document.getElementById('rb1Stats').innerHTML = h1 || '<div class="empty">Henüz eşit süreli karşılaştırma sonucu yok.</div>';
+  {
+    const parts = [];
+    if (c1.kubler) {
+      const q = pairOf(c1.kubler, 'RBRS-AE', 'DEPSO');
+      parts.push(q.p >= 0.05 ? "Kübler'in senaryolarında DEPSO'yla aynı düzeyde" :
+        `Kübler'in senaryolarında DEPSO'dan ${pct(q.diff)} ${q.diff < 0 ? 'kısa' : 'uzun'} yol buluyor`);
+    }
+    if (c1.grid) parts.push(`kendi depolarımızda ALNS'den ${pct(pairOf(c1.grid, 'RBRS-AE', 'ALNS').diff)} uzun yol buluyor`);
+    if (parts.length) document.getElementById('rb1Headline').textContent =
+      `Aynı süre verildiğinde RBRS-AE ${parts.join(', ')}. Fark sipariş sayısı arttıkça açılıyor. RBRS-AE2 bu farkı kapatmak için geliştirildi.`;
+  }
+  const c2 = latestCmp(['RBRS-AE', 'RBRS-AE2', 'ALNS']);
+  let h2 = '';
+  ['kubler', 'grid'].forEach(k => { if (c2[k]) h2 += pairTile(c2[k], 'RBRS-AE2', 'RBRS-AE') + pairTile(c2[k], 'RBRS-AE2', 'ALNS'); });
+  // dinamik deney: taşımalı toplam mesafe
+  const dyn = {};
+  (C.dynamic || []).forEach(d => { if (d.summary && d.summary.td_dynamic && /^S\d+_/.test(d.problem)) (dyn[d.problem] = dyn[d.problem] || {})[d.algorithm] = d.summary.td_dynamic; });
+  const dd = Object.values(dyn).filter(x => x['RBRS-AE'] && x['RBRS-AE2']).map(x => 100 * (x['RBRS-AE2'] - x['RBRS-AE']) / x['RBRS-AE']);
+  if (dd.length) h2 += statTile("Yer değişimli deney · RBRS-AE'ye göre", dd.reduce((s, v) => s + v, 0) / dd.length,
+    `${dd.length} depoda taşımadan sonraki toplam yürüme mesafesi, ortalama`);
+  document.getElementById('rb2Stats').innerHTML = h2 || '<div class="empty">RBRS-AE2 sonuçları henüz eklenmedi.</div>';
+  if (c2.kubler || c2.grid) {
+    const parts = [];
+    if (c2.kubler) {
+      const q = pairOf(c2.kubler, 'RBRS-AE2', 'ALNS');
+      parts.push(`Kübler'in senaryolarında ALNS'den ${pct(q.diff)} ${q.diff < 0 ? 'kısa' : 'uzun'} yol buluyor` +
+                 (topAlg(c2.kubler) === 'RBRS-AE2' ? ' ve dört algoritma içinde en çok örnekte en kısa yolu o buluyor' : ''));
+    }
+    if (c2.grid) {
+      const q = pairOf(c2.grid, 'RBRS-AE2', 'ALNS'), o = pairOf(c2.grid, 'RBRS-AE', 'ALNS');
+      parts.push(`kendi depolarımızda ALNS'den uzaklık eski sürümde ${pct(o.diff)}, yeni sürümde ${pct(q.diff)}`);
+    }
+    document.getElementById('rb2Headline').textContent = `RBRS-AE2 ${parts.join('; ')}. Kazanç en çok 100 ve 200 siparişlik büyük örneklerde.`;
+  }
+}
+
 function init() {
   drawIllustrations(); onTheme(drawIllustrations);
-  initRace(); initExplorer(); initComparison(); initDynamic(); initReference();
+  initRace(); initRbrs(); initExplorer(); initComparison(); initDynamic(); initReference();
   document.getElementById('stamp').textContent =
     `Veriler ${C.generated_at || '—'} tarihinde, kod sürümü ${C.git_commit || '—'} ile üretildi · ${nf(C.records.length)} deney örneği.`;
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawIllustrations, 120); });
