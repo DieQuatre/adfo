@@ -1,235 +1,184 @@
-# Warehouse Optimization — DEPSO · RBRS-AE · ALNS
+# Depoda sipariş toplama: DEPSO · RBRS-AE · RBRS-AE2 · ALNS
 
-> **Açık sorunlar:** 2026-09-28 denetiminde bulunan ve henüz düzeltilmemiş
-> hatalar için bkz. [`docs/DENETIM_2026-09-28.md`](docs/DENETIM_2026-09-28.md).
-> Bu hatalar düzeltilene kadar aşağıdaki sonuçlar ön sonuç sayılmalıdır.
+Bir depoda siparişleri hazırlayan kişi (toplayıcı) arabasıyla raflar arasında
+dolaşıp ürünleri toplar ve zamanının büyük kısmını yürüyerek geçirir. Bu proje
+aynı siparişleri daha az yürüyerek toplamanın yollarını arar. Üç karar birlikte
+ele alınır:
 
-Kübler, Glock, Bauernhansl (2020) reproduksiyonu (DEPSO) + RBRS-AE + ALNS.
-Üç algoritma aynı temel sınıfı, aynı kapasiteyi ve aynı rota servisini
-(`algorithms/routing/route_cache.py`, NN + 2-opt) kullanır.
+- **Storage location assignment:** ürün hangi rafa konmalı?
+- **Order batching:** hangi siparişler aynı turda toplanmalı?
+- **Picker routing:** bir turda raflar hangi sırayla gezilmeli?
 
-**Bağımsız denetim ile doğrulanmış.** Rapor: 6 kritik kusur bulundu ve düzeltildi,
-35 senaryonun tamamı paper veri setiyle sıfırdan koşuldu.
+Repoda dört algoritma var. Hepsi aynı depo modelini, aynı araba kapasitesini
+(100 ağırlık birimi) ve aynı rota hesabını (en yakın komşu + 2-opt) kullanır.
 
-## Durum
-
-| Modül | Durum |
-|---|---|
-| `config.py` | ✅ |
-| `core/warehouse.py` | ✅ Parametrik depo düzeni + numpy mesafe matrisi |
-| `core/data_loader.py` | ✅ |
-| `core/generator.py` | ✅ Parametrik problem üreticisi — `docs/URETICI.md` |
-| `core/forecasting.py` | ✅ Holt-Winters (α=0.19, β=0.053, γ=0.10) |
-| `algorithms/base.py` | ✅ Interface |
-| `algorithms/routing/*` | ✅ NN, 2-opt, **gerçek S-Shape traversal** |
-| `algorithms/batching/*` | ✅ First-fit, Savings |
-| `algorithms/depso.py` | ✅ Paper algoritması — 35 senaryoda doğrulandı |
-| `algorithms/rbrs_ae.py` | ✅ Regret tabanı düzeltildi |
-| `algorithms/alns.py` | ✅ ALNS — formülasyon: `docs/ALNS_formulasyon.md` |
-| `algorithms/routing/route_cache.py` | ✅ Ortak rota servisi (tüm algoritmalar) |
-| `algorithms/relocation.py` | ✅ Makale 5.3'e göre yeniden yazıldı — `docs/RELOCATION.md` |
-| `benchmarks/{sop,fcfs}.py` | ✅ Gerçek S-Shape ile |
-| `ui/app.py` + 4 sayfa | ✅ Streamlit hazır |
-| `run_batch.py` | ✅ 35 senaryo koşucu (5 algoritma, paralel) |
-| `tests/` | ✅ **157 test**, tamamı geçiyor |
-
----
-
-## Doğrulanmış DEPSO Sonuçları — 35 Senaryo (Paper Appendix H)
-
-**Bağımsız denetim, paper veri setiyle, 5 instance × DEPSO 500 iterasyon:**
-
-| Metrik | Değer |
-|---|---|
-| Toplam senaryo | 35 |
-| Bağımsız ölçüm | **35/35** (kopya deney yok) |
-| Tolerans içinde (±5 puan) | **35/35 ✅** |
-| Ortalama mutlak sapma | **±1.40 puan** |
-| Ortalama işaretli sapma | **+0.48** (sistematik yanlılık yok) |
-| Maksimum sapma | ±3.47 puan |
-| DEPSO vs FCFS ortalama | %48.93 (paper: %40.80) |
-
-Sapma sipariş sayısıyla değil, **sipariş başına maksimum satır sayısıyla (N_maxol)**
-ilişkilidir — N_maxol=2'de ortalama +2.60 (paper altı), N_maxol=10'da ortalama
-−1.28 (paper üstü). Bu örüntünün nedeni henüz açıklanmadı, iki hipotez var
-(DEPSO implementasyon farkı veya S-shape baseline tepkisi); ayırt etmek için
-ek deney gerekiyor.
-
----
-
-## RBRS-AE — DEPSO Karşılaştırması
-
-**35 senaryonun 33'ünde RBRS-AE, DEPSO'dan daha kısa toplam mesafe üretti**
-— ortalama **%5.82** daha kısa, ve bunu DEPSO'nun 500 iterasyonuna karşı
-sadece **100 iterasyonla** başarıyor.
-
-### Hız (dikkat: her boyutta değil)
-
-| Boyut | DEPSO ort. süre | RBRS-AE ort. süre | Sonuç |
-|---|---|---|---|
-| k = 50  | 55 s  | 12 s  | 5× hızlı |
-| k = 100 | 104 s | 52 s  | 2× hızlı |
-| k = 150 | 157 s | 156 s | eşit |
-| k = 200 | 217 s | 339 s | **1.56× yavaş** |
-
-**"RBRS-AE her zaman daha hızlı" iddiası yanlıştır.** Doğru ifade: RBRS-AE,
-DEPSO'dan tutarlı biçimde daha iyi çözüm üretir; hız avantajı küçük
-instance'larda (k≤100) belirgindir, büyük instance'larda kaybolur. Sebep,
-final local search'ün O(B²·n²) taraması — bilinen, düzeltilebilir bir darboğaz.
-
----
-
-## Bulunan ve Düzeltilen Kritik Kusurlar
-
-| # | Kusur | Etki |
+| Algoritma | Kısaca | Kod |
 |---|---|---|
-| 1 | Dynamic relocation'da iki sayaç birbirini sıfırlıyordu | Modül 3 periyot boyunca 0 öneri üretiyordu — **paper'ın ana katkısı hiç çalışmıyordu** |
-| 2 | 35 senaryonun 21'i aynı deneyin kopyasıydı | Sipariş sayısı üreticiye geçmiyordu, k=50/100/150/200 aynı listeyi alıyordu |
-| 3 | Karşılaştırma paper veri setini kullanmıyordu | Kendi sentetik siparişleri SOP tabanını yapay düşürüyor, kazancı şişiriyordu |
-| 4 | DEPSO durağanlık sayacı hiç sıfırlanmıyordu | Appendix G'deki yerel arama tasarlandığından çok daha sık tetikleniyordu |
-| 5 | RBRS-AE regret adımı yanlış taban kullanıyordu | 50 siparişte 22 batch açıyordu (alt sınır 2) — regret adımı fiilen devre dışıydı |
-| 6 | "S-Shape" gerçek S-shape değildi | Koridoru baştan sona geçmiyor, en kısa yol hesaplıyordu — SOP/FCFS baseline'ını olduğundan iyi gösteriyordu |
+| DEPSO | Kübler, Glock ve Bauernhansl'ın (2020) yöntemi; projenin başlangıç noktası | `algorithms/depso.py` |
+| RBRS-AE | Bizim ilk yöntemimiz: pişmanlık sırasıyla yerleştirme, verimsiz turları sökme | `algorithms/rbrs_ae.py` |
+| RBRS-AE2 | RBRS-AE'nin iyileştirilmiş sürümü: çeşitli sökme kuralları, pişmanlıkla geri yerleştirme | `algorithms/rbrs_ae2.py` |
+| ALNS | Uyarlamalı büyük komşuluk araması: sökme ve kurma yöntemlerinden işe yarayanı daha sık seçer | `algorithms/alns.py` |
 
-Her kusur için regresyon testi yazıldı (`tests/test_audit_regressions.py`,
-`tests/test_s_shape_traversal.py`).
+Karşılaştırma için iki basit kural da var: SOP (her sipariş ayrı tur) ve FCFS
+(geliş sırasına göre doldur).
 
----
+**Web sitesi (Raf Arası):** https://diequatre.github.io/adfo/
+Algoritmaların rotalarını, deney sonuçlarını ve tarayıcıda çalışan bir
+"Kendin dene" bölümünü içerir.
 
-## Kurulum & Kullanım
+## Sonuçlar
+
+Bütün karşılaştırmalarda algoritmalara aynı süre verildi (sipariş başına
+0,05 sn), her örnek 5 farklı tohumla çözüldü ve farklar Wilcoxon testiyle
+sınandı. Kod sürümü: `1d5dd37`. Negatif fark, daha kısa yol demektir.
+
+### Kübler'in deney senaryoları (35 senaryo × 5 örnek)
+
+| | DEPSO | RBRS-AE | RBRS-AE2 | ALNS |
+|---|---|---|---|---|
+| En kısa yolu bulduğu örnek | 28 | 6 | **77** | 56 |
+
+- RBRS-AE2, RBRS-AE'den %2,6 kısa (175 örneğin 157'sinde), ALNS'den %0,6 kısa.
+- RBRS-AE ile DEPSO arasındaki fark anlamlı değil.
+- Rapor: `results/compare__s5__tpo0.05/karsilastirma.md`
+
+### Kendi ürettiğimiz depolar (2 160 örnek)
+
+4 depo boyutu (5 000–20 000 lokasyon) × 3 koridor yapısı × 6 doluluk oranı ×
+10 sipariş seti × 3 sipariş sayısı (50/100/200).
+
+| | DEPSO | RBRS-AE | RBRS-AE2 | ALNS |
+|---|---|---|---|---|
+| En kısa yolu bulduğu örnek | 15 | 48 | 378 | **1 710** |
+| ALNS'nin yolu bundan ne kadar kısa | %6,4 | %3,8 | %1,4 | — |
+
+- RBRS-AE2, RBRS-AE'den %2,5 kısa (2 160 örneğin 1 997'sinde).
+- Fark sipariş sayısıyla açılıyor; doluluk ve koridor yapısının etkisi küçük.
+- Rapor: `results/generated/karsilastirma_results__s5__tpo0.05.md`
+
+### Dinamik yer ataması (talep değişince ürünleri taşımak)
+
+Kendi depolarımızda (iki blok, %70 doluluk, yüksek dinamik), 9 dönem.
+Taşımadan sonraki toplam yürüme mesafesi (LU):
+
+| Depo | DEPSO | RBRS-AE | RBRS-AE2 | ALNS |
+|---|---|---|---|---|
+| 5 000 | 335 837 | 329 712 | 310 734 | **301 060** |
+| 10 000 | 1 104 736 | 1 026 915 | 946 389 | **922 546** |
+| 15 000 | 1 884 767 | 1 783 249 | 1 621 159 | **1 573 431** |
+| 20 000 | 2 991 434 | 2 914 369 | 2 617 216 | **2 526 707** |
+
+Taşıma her algoritmada mesafeyi azaltıyor; yüzde kazancı en yüksek olan DEPSO,
+çünkü başlangıç planı en uzun olan o. Not: RBRS-AE2 koşuları `1d5dd37`,
+diğerleri bir önceki kod sürümüyle alındı. Ayrıntılar: `docs/RELOCATION.md`.
+
+### Referans doğrulama
+
+DEPSO, Kübler ve arkadaşlarının 35 senaryosunda makalede raporlanan SOP'a
+göre kazanca 35/35 senaryoda ±3,6 puan içinde yaklaşıyor. Dinamik yer
+atamasında yön ve büyüklük makaleyle uyumlu, birebir değil. Mutlak mesafeler
+makaledekinin yaklaşık yarısı; yüzde karşılaştırmalar bundan etkilenmiyor,
+nedeni açık bir nokta olarak duruyor. Ayrıntılar: `docs/KUBLER_VERI.md`.
+
+## Kurulum
+
+Python 3.10 veya üstü.
 
 ```bash
 pip install -r requirements.txt
-streamlit run ui/app.py
+python -m pytest tests/ -q
 ```
 
-**UI Sayfaları:**
+`numba` kuruluysa rota hesabı derlenmiş hâliyle ~10–20 kat hızlı çalışır;
+sonuçlar aynıdır. Kurulu değilse kod yine çalışır, yalnızca yavaştır.
 
-| Sayfa | İçerik |
-|---|---|
-| 📦 Ana Sayfa | Depo görselleştirme |
-| 🎯 Tek Koşu | Algoritma çalıştır, rota görselleştir |
-| ⚖️ Karşılaştırma | SOP, FCFS, DEPSO, RBRS-AE, ALNS yan yana |
-| 🔄 Dynamic Relocation | 9 periyot Holt-Winters + relocation (artık çalışıyor) |
-| 📊 35 Senaryo | Paper Appendix H tam karşılaştırma |
+## Deneyleri koşmak
 
----
-
-## 35 Senaryo Koşumu
+Koşucular commit'lenmemiş değişiklik varsa başlamaz; böylece her sonucun hangi
+kodla alındığı bellidir (yalnızca deneme için `--allow-dirty`). Kesilen koşum
+aynı komutla kaldığı yerden devam eder. Protokolün tamamı:
+`docs/DENEY_PROTOKOLU.md`.
 
 ```bash
-python run_batch.py --batch all --jobs 8   # 35 senaryo, 8 paralel işlem
-python run_batch.py --batch 3              # yalnızca senaryo 11-15
-python run_batch.py --only 50_2_6 --n 2    # hızlı deneme (results/only.json)
-python run_batch.py --summary              # kayıtlı sonuçların özeti
-python regen_35.py                         # results/paper_35_scenarios.md raporu
+# Kübler'in 35 senaryosu, eşit süre, 5 tohum (~3 saat, 16 işlem)
+python run_batch.py --batch all --jobs 16 --seeds 5 --time-per-order 0.05
+python compare_algorithms.py results/compare__s5__tpo0.05
+
+# Kendi ürettiğimiz depolar (~3-4 saat)
+python run_generated.py --jobs 16 --seeds 5 --time-per-order 0.05
+python compare_algorithms.py results/generated/results__s5__tpo0.05.json
+
+# Dinamik yer ataması: bir depo, bir algoritma
+python run_dynamic.py --source generated --size 10000 --blocks 2 --fill 0.7 \
+    --dynamics yuksek --algo RBRS-AE2 --jobs 16
+
+# Kübler'in dinamik senaryosu (makale Şekil 10 verisi)
+python run_dynamic.py --source kubler-fig10 --scenario 1 --algo DEPSO --jobs 16
+
+# RBRS-AE iyileştirme denemeleri (hangi değişiklik ne kazandırıyor)
+python rbrs_ablation.py --jobs 16 --full --seeds 5
+
+# Hızlı deneme
+python run_batch.py --only 50_2_6 --n 2
 ```
 
-Her senaryoda SOP, FCFS, DEPSO, RBRS-AE ve ALNS aynı siparişlerle koşar.
-Algoritma ayarları `config.py`'den gelir. `--jobs` için bilgisayarın çekirdek
-sayısının birkaç eksiği iyi bir değerdir. Sonuç dosyaları örnek bazında ham
-mesafe ve süreleri, kullanılan ayarları ve kod sürümünü içerir.
+Windows'ta Türkçe karakterli çıktılar için komutların başına `PYTHONUTF8=1`
+eklemek gerekebilir.
 
-Sonuçlar `results/` klasörüne kaydedilir, UI otomatik yükler.
+## Web sitesi
 
-**Not:** Sürekli entegrasyon artık her push'ta otomatik tetiklenmiyor — eskiden
-algoritma dosyalarına yapılan her push, senaryoları zayıf varsayılanlarla
-yeniden koşup sonuçların üzerine yazıyordu.
-
----
-
-## Parametrik ızgara deneyi
+Site `site/` klasöründedir ve sayılar elle girilmez, `results/` altındaki
+deney dosyalarından üretilir:
 
 ```bash
-python generate_instances.py                 # 36 depoyu üret, instances/index.csv özet
-python run_generated.py --jobs 8             # 36 depo × 10 sipariş seti × 5 algoritma
-python run_generated.py --sizes 5000 --sets 2 --k 50   # küçük deneme
-python run_generated.py --summary            # results/generated/summary.md
-```
-
-Ayrıntılar ve grup kararı bekleyen değerler: `docs/URETICI.md`.
-
----
-
-## Dinamik yer ataması (relocation)
-
-```bash
-python run_dynamic.py --source kubler --scenario 1 --algo DEPSO --jobs 16
-python run_dynamic.py --source generated --size 10000 --blocks 2 --fill 0.7 --dynamics yuksek --algo ALNS --jobs 16
-python validate_relocation.py --algo RBRS-AE      # yaklaşımın doğrulanması
-```
-
-Ayrıntılar, makaleden sapma ve ilk sonuçlar: `docs/RELOCATION.md`.
-
----
-
-## Web sitesi (Raf Arası)
-
-Site `site/` klasöründe; sayılar elle girilmez, deney sonuçlarından üretilir:
-
-```bash
-python site_data.py            # results/ altındaki tüm deneyleri site/data/catalog.js'e toplar
-python site_data.py --races    # yarış animasyonlarının rotalarını da yeniden hesaplar
+python site_data.py            # sonuçları site/data/catalog.js'e toplar
+python site_data.py --races    # yarış bölümünün rotalarını yeniden hesaplar (yavaş)
 ```
 
 Yerelde görmek için `site/index.html` dosyasını tarayıcıda açmak yeterli.
-"Kendin dene" bölümü (`site/solver.js`, `site/playground.js`) algoritmaların hafifletilmiş bir
-JavaScript sürümüyle ziyaretçinin tarayıcısında çalışır; resmî sonuçlar Python kodundan gelir. `site/` master'a
-gönderildiğinde GitHub Pages ile yayınlanır (`.github/workflows/pages.yml`; ilk seferde
-Settings → Pages → Source: GitHub Actions).
+`site/` master'a gönderildiğinde GitHub Pages ile yayınlanır
+(`.github/workflows/pages.yml`). "Kendin dene" bölümü algoritmaların
+hafifletilmiş JavaScript sürümüyle (`site/solver.js`) ziyaretçinin
+tarayıcısında çalışır; sitedeki deney sonuçları ise Python kodundan gelir.
 
----
+Eski Streamlit arayüzü de duruyor: `streamlit run ui/app.py`.
 
-## Testler
+## Klasörler
 
-```bash
-python -m pytest tests/ -v
+```
+algorithms/           DEPSO, RBRS-AE, RBRS-AE2, ALNS, yer değişimi (relocation)
+  routing/            rota hesabı (en yakın komşu + 2-opt, numba ile derlenmiş yol, önbellek)
+  batching/           first-fit ve savings gruplama
+benchmarks/           SOP ve FCFS
+core/                 depo modeli, problem üreticileri, deney protokolü, talep tahmini
+data/                 Kübler senaryolarının sipariş verisi
+results/              deney sonuçları (her dosya kod sürümünü içerir)
+site/                 Raf Arası web sitesi
+docs/                 yöntem ve deney notları
+tests/                testler (Python ve sitenin çözücüsü için)
+run_batch.py          Kübler'in 35 senaryosu
+run_generated.py      kendi ürettiğimiz depolar
+run_dynamic.py        dinamik yer ataması
+compare_algorithms.py eşit süreli karşılaştırma raporu
+rbrs_ablation.py      RBRS-AE iyileştirme denemeleri
+site_data.py          site verisini üretir
 ```
 
-**157 test, tamamı geçiyor.**
+## Belgeler
 
-| Dosya | Kapsam |
+| Belge | İçerik |
 |---|---|
-| `test_audit_regressions.py` | Denetimde bulunan 6 kusur için regresyon |
-| `test_solution_integrity.py` | Her algoritmanın çözümü tutarlı mı (sipariş, kapasite, rota, mesafe) |
-| `test_alns.py` | ALNS denklemleri (6), (8), (11), (13), (16) ve operatörler |
-| `test_routing_fast_path.py` | Hızlı rota yolu eski yolla birebir aynı |
-| `test_parametric_warehouse.py` | 1/2/3 bloklu depo geometrisi, algoritmalar Kübler dışı düzende |
-| `test_generator.py` | Üretici: belirlilik, doluluk, yerleşim, siparişler, dinamiklik |
-| `test_s_shape_traversal.py` | Gerçek S-shape traversal doğrulaması |
-| `test_relocation.py` | Relocation: sınıf sınırları, 4 takas senaryosu, yer kontrolü, uçtan uca değişmezler |
-| `test_depso.py`, `test_batching.py`, `test_warehouse.py`, `test_smoke.py` | Temel modül testleri |
+| `docs/DENEY_PROTOKOLU.md` | Eşit süre, çoklu tohum, kod sürümü kontrolü, istatistik test |
+| `docs/RBRS_AE2.md` | RBRS-AE'nin zayıf yanları, denenen yedi değişiklik ve sonuçları |
+| `docs/URETICI.md` | Kendi depo ve sipariş üreticimiz |
+| `docs/KUBLER_VERI.md` | Kübler'in veri üretiminin yeniden kurulumu |
+| `docs/RELOCATION.md` | Dinamik yer ataması, makaleye göre farklar |
+| `docs/ALNS_formulasyon.md` | ALNS'nin matematiksel tanımı |
+| `docs/DENETIM_2026-09-28.md` | Eylül sonu kod denetimi ve düzeltmeler |
 
----
+## Kaynak
 
-## Proje Yapısı
-
-```
-warehouse_optimization/
-├── config.py
-├── core/
-│   ├── warehouse.py
-│   ├── data_loader.py
-│   └── forecasting.py
-├── algorithms/
-│   ├── depso.py          # Paper algoritması
-│   ├── rbrs_ae.py         # Yeni algoritma — regret düzeltildi
-│   ├── relocation.py      # Düzeltildi — artık çalışıyor
-│   ├── routing/
-│   │   └── s_shape.py     # Gerçek traversal
-│   └── batching/
-├── benchmarks/
-├── ui/
-│   └── pages/
-├── tests/                 # 157 test
-├── run_batch.py           # tek deney koşucusu (35 senaryo)
-├── regen_35.py            # batch sonuçlarından rapor üretir
-├── docs/                  # denetim raporları ve notlar
-├── data/                  # 370 JSON dataset (paper parametreleriyle)
-└── results/                # batch_1..7.json — bağımsız doğrulanmış
-```
-
-## Kaynaklar
-
-Rapor kaynakları: `results/batch_1..7.json`, `results/paper_35_scenarios.json`,
-`tests/` (157 test). Denetim `fix/audit-blockers` branch'inde yapıldı,
-`master`'a birleştirildi.
+Kübler, P., Glock, C. H. ve Bauernhansl, T. (2020). A new iterative method for
+solving the joint dynamic storage location assignment, order batching and
+picker routing problem in manual picker-to-parts warehouses. *Computers and
+Industrial Engineering*, 147, 106645.
