@@ -767,9 +767,32 @@ function initRbrs() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════
+// TEMA DÜĞMESİ: aydınlık / karanlık; seçim tarayıcıda hatırlanır
+// ════════════════════════════════════════════════════════════════════
+function initTheme() {
+  const btn = document.getElementById('themeBtn');
+  if (!btn) return;
+  const root = document.documentElement, mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const current = () => root.getAttribute('data-theme') || (mq.matches ? 'dark' : 'light');
+  const label = () => {
+    const next = current() === 'dark' ? 'Aydınlık temaya geç' : 'Karanlık temaya geç';
+    btn.setAttribute('aria-label', next); btn.title = next;
+    btn.dataset.mode = current();
+  };
+  btn.addEventListener('click', () => {
+    const next = current() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('rafArasiTema', next); } catch (e) {}
+    label();
+  });
+  mq.addEventListener?.('change', label);
+  label();
+}
+
 function init() {
   drawIllustrations(); onTheme(drawIllustrations);
-  initRace(); initRbrs(); initExplorer(); initComparison(); initDynamic(); initReference();
+  initTheme(); initRace(); initRbrs(); initExplorer(); initComparison(); initDynamic(); initReference();
   document.getElementById('stamp').textContent =
     `Veriler ${C.generated_at || '—'} tarihinde, kod sürümü ${C.git_commit || '—'} ile üretildi · ${nf(C.records.length)} deney örneği.`;
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawIllustrations, 120); });
