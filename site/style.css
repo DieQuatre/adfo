@@ -188,3 +188,14 @@ legend{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;
 .rb-bar select{max-width:100%;min-width:0;text-overflow:ellipsis}
 .controls label.inline{max-width:100%;min-width:0}
 .controls select{max-width:100%;min-width:0;text-overflow:ellipsis}
+
+/* tema düğmesi */
+.theme-btn{margin-left:auto;flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer;padding:0}
+.theme-btn:hover{border-color:var(--ink-2)}
+.theme-btn .i-sun{display:none}
+.theme-btn[data-mode="dark"] .i-sun{display:block}
+.theme-btn[data-mode="dark"] .i-moon{display:none}
+.nav .wrap{position:relative}
+.nav .wrap{overflow:visible}
+.nav nav{overflow-x:auto;min-width:0;flex:1 1 auto;scrollbar-width:none}
+.nav nav::-webkit-scrollbar{display:none}
